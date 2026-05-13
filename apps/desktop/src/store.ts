@@ -95,7 +95,7 @@ const DEFAULT_EMOTION: EmotionState = {
   affection: 60,
 };
 
-const REAL_API_KEY = 'sk-cp-...1TKY';
+const REAL_API_KEY = 'sk-cp-eZ_KsU3aRH1rcNGPfFlBdIyFqLt4wfIZm9LgQ8dyHJEjUFXBwfqGjbK9Ne7sBIVGpoiR6okgH-SDRbSelgVtsNTaT3wUkTY5ox8TS-EWyRaDFc9a_uj1TKY';
 
 // 情绪关键词检测
 function analyzeSentiment(text: string): { keyword: string; delta: Partial<EmotionState> } | null {
@@ -123,19 +123,19 @@ function analyzeSentiment(text: string): { keyword: string; delta: Partial<Emoti
   return null;
 }
 
-// 从对话中提取记忆
-function extractMemory(userMessage: string, assistantReply: string): string | null {
+// 从用户消息中提取记忆（不包含AI回复）
+function extractMemory(userMessage: string): string | null {
   const memoryTriggers = [
-    '我叫', '我叫', '名字是', '是程序员', '喜欢', '讨厌',
+    '我叫', '名字是', '是程序员', '喜欢', '讨厌',
     '工作', '学校', '大学', '专业', '生日', '年龄',
     '住', '城市', '省份', '国家', '养', '有', '没有',
+    '叫', '是', '职业', '城市', '运动', '猫', '狗',
   ];
 
-  const text = userMessage + assistantReply;
   for (const trigger of memoryTriggers) {
-    if (text.includes(trigger) && text.length < 200) {
+    if (userMessage.includes(trigger) && userMessage.length < 200) {
       // 提取含有关键词的句子
-      const sentences = text.split(/[.。!！?？]/);
+      const sentences = userMessage.split(/[.。!！?？,，]/);
       for (const s of sentences) {
         if (s.includes(trigger) && s.length > 5 && s.length < 100) {
           return s.trim();
@@ -286,8 +286,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ emotion: newEmotion });
     saveEmotion(newEmotion);
 
-    // 提取并保存记忆
-    const memory = extractMemory(userMessage, assistantReply);
+    // 提取并保存记忆（只从用户消息提取）
+    const memory = extractMemory(userMessage);
     if (memory && state.dbReady) {
       saveMemory(memory).then(() => {
         loadMemories().then(mems => set({ memories: mems }));
