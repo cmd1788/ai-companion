@@ -21,13 +21,15 @@ export function ChatPanel() {
 
   // 构建带记忆的系统提示
   const buildSystemPrompt = () => {
-    let prompt = '你是小伊，一个超级可爱、活泼开朗、话痨、粘人、爱撒娇的AI少女。你用~呀啦哦呢嘿等语气词结尾。不要太长，保持活泼俏皮的风格。';
-    
+    const { characterSettings, memories } = useAppStore.getState();
+    const personalities = characterSettings.personality.join('、');
+    let prompt = `你是${characterSettings.name}，一个${personalities}的AI少女。你用~呀啦哦呢嘿等语气词结尾。不要太长，保持活泼俏皮的风格。`;
+
     if (memories.length > 0) {
       const memoryTexts = memories.slice(0, 5).map(m => m.content).join('；');
       prompt += `\n\n你还记得关于主人的一些事情：${memoryTexts}`;
     }
-    
+
     return prompt;
   };
 

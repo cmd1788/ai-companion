@@ -30,6 +30,31 @@ interface AIConfig {
   apiKey?: string;
 }
 
+// 风格设置接口
+interface StyleSettings {
+  showEmotionBar: boolean;      // 显示情绪指标条
+  showCharacter: boolean;       // 显示角色立绘
+  showChat: boolean;            // 显示聊天面板
+  showToolbar: boolean;         // 显示底部工具栏
+  enableTTS: boolean;           // 开启语音朗读
+  enableScreenWatch: boolean;   // 开启截屏观察
+  enableAutoReply: boolean;     // 开启主动回复
+}
+
+// 系统设置接口
+interface SystemSettings {
+  screenWatchInterval: number;  // 截屏间隔(秒)
+  autoReplySpeed: 'slow' | 'normal' | 'fast';  // 主动回复速度
+  memoryDays: number;           // 记忆保存天数
+}
+
+// 人物设定接口
+interface CharacterSettings {
+  personality: string[];        // 性格标签
+  name: string;                // 角色名称
+  photoPath: string;            // 照片路径
+}
+
 interface AppState {
   dbReady: boolean;
   character: CharacterProfile;
@@ -41,6 +66,15 @@ interface AppState {
   isChatOpen: boolean;
   aiConfig: AIConfig;
   photoPath: string;
+  // 新增设置
+  styleSettings: StyleSettings;
+  systemSettings: SystemSettings;
+  characterSettings: CharacterSettings;
+  // 新增设置方法
+  setStyleSettings: (settings: StyleSettings) => void;
+  setSystemSettings: (settings: SystemSettings) => void;
+  setCharacterSettings: (settings: CharacterSettings) => void;
+  setCharacter: (character: CharacterProfile) => void;
   initDB: () => Promise<void>;
   setEmotion: (emotion: EmotionState) => void;
   setCharacterState: (state: string) => void;
@@ -137,7 +171,36 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   photoPath: 'E:/BaiduNetdiskDownload/2333/anon',
 
+  // 新增设置默认值
+  styleSettings: {
+    showEmotionBar: true,
+    showCharacter: true,
+    showChat: true,
+    showToolbar: true,
+    enableTTS: false,
+    enableScreenWatch: true,
+    enableAutoReply: true,
+  },
+
+  systemSettings: {
+    screenWatchInterval: 30,
+    autoReplySpeed: 'normal',
+    memoryDays: 30,
+  },
+
+  characterSettings: {
+    personality: ['超级可爱', '话痨', '活泼开朗', '粘人', '爱撒娇'],
+    name: '小伊',
+    photoPath: 'E:/BaiduNetdiskDownload/2333/anon',
+  },
+
   setPhotoPath: (photoPath) => set({ photoPath }),
+
+  // 新增设置方法
+  setStyleSettings: (styleSettings) => set({ styleSettings }),
+  setSystemSettings: (systemSettings) => set({ systemSettings }),
+  setCharacterSettings: (characterSettings) => set({ characterSettings }),
+  setCharacter: (character) => set({ character }),
 
   initDB: async () => {
     console.log('[Store] initDB called');

@@ -181,10 +181,21 @@ interface AppState {
 export function ScreenWatcher() {
   const lastScreenshotRef = useRef<string>('');
   const silenceCountRef = useRef(0);
-  const { addMessage, setEmotion, emotion, messages } = useAppStore();
+  const { addMessage, setEmotion, emotion, messages, styleSettings, systemSettings } = useAppStore();
+
+  // 根据速度调整基础概率
+  const getBaseInterval = () => {
+    switch (systemSettings.autoReplySpeed) {
+      case 'slow': return 60;
+      case 'fast': return 15;
+      default: return systemSettings.screenWatchInterval;
+    }
+  };
+
+  const interval = styleSettings.enableScreenWatch ? getBaseInterval() : 999999;
 
   useEffect(() => {
-    const interval = 30; // 30秒
+    if (!styleSettings.enableScreenWatch) return;
 
     const timer = setInterval(async () => {
       try {
@@ -219,7 +230,7 @@ export function ScreenWatcher() {
     }, interval * 1000);
 
     return () => clearInterval(timer);
-  }, [addMessage, setEmotion, emotion]);
+  }, [addMessage, setEmotion, emotion, styleSettings.enableScreenWatch, interval]);
 
   return null;
 }
