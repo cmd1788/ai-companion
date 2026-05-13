@@ -6,7 +6,7 @@ interface SettingsPanelProps {
 }
 
 export function SettingsPanel({ onClose }: SettingsPanelProps) {
-  const { aiConfig, setAIConfig, character, setCharacter } = useAppStore();
+  const { aiConfig, setAIConfig, character, setCharacter, photoPath, setPhotoPath } = useAppStore();
   const [miniMaxKey, setMiniMaxKey] = useState(aiConfig.apiKey || '');
 
   const handleSaveMiniMax = () => {
@@ -78,6 +78,19 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
             value={character.name}
             onChange={(e) => setCharacter({ ...character, name: e.target.value })}
             placeholder="角色名称"
+            className="w-full px-3 py-2 rounded-lg text-sm mb-2"
+            style={{ background: 'rgba(255,255,255,0.1)', color: '#eaeaea', border: 'none' }}
+          />
+        </div>
+
+        {/* 照片路径配置 */}
+        <div className="p-3 rounded-lg" style={{ background: 'rgba(255,255,255,0.05)' }}>
+          <h3 className="text-sm font-medium mb-2" style={{ color: '#eaeaea' }}>照片路径</h3>
+          <input
+            type="text"
+            value={photoPath}
+            onChange={(e) => setPhotoPath(e.target.value)}
+            placeholder="E:/BaiduNetdiskDownload/2333/anon"
             className="w-full px-3 py-2 rounded-lg text-sm mb-2"
             style={{ background: 'rgba(255,255,255,0.1)', color: '#eaeaea', border: 'none' }}
           />

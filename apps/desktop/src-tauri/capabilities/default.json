@@ -5,23 +5,15 @@
   "windows": ["main"],
   "permissions": [
     "core:default",
-    "core:window:default",
-    "core:window:allow-hide",
-    "core:window:allow-show",
-    "core:window:allow-close",
-    "core:window:allow-set-focus",
-    "core:window:allow-set-ignore-cursor-events",
-    "core:window:allow-start-dragging",
-    "sql:default",
-    "sql:allow-load",
-    "sql:allow-execute",
-    "sql:allow-select",
-    "sql:allow-close",
-    "fs:allow-read"
-  ],
-  "plugins": {
-    "sql": {
-      "preload": ["sqlite:ai_companion.db"]
+    "fs:default",
+    "fs:allow-appdata-read-recursive",
+    "fs:allow-appdata-write-recursive",
+    {
+      "identifier": "fs:scope",
+      "allow": [
+        { "path": "E:/BaiduNetdiskDownload/2333/anon/**" },
+        { "path": "E:/**" }
+      ]
     }
-  }
+  ]
 }

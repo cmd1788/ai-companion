@@ -1,11 +1,33 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { CharacterDisplay } from './CharacterDisplay';
 import { ChatPanel } from './ChatPanel';
 import { EmotionDisplay } from './EmotionDisplay';
 import { SettingsPanel } from './SettingsPanel';
+import { useAppStore } from './store';
 
 export default function App() {
   const [isSettingsOpen, setSettingsOpen] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const { initDB, dbReady } = useAppStore();
+
+  useEffect(() => {
+    initDB().then(() => setIsLoading(false));
+  }, [initDB]);
+
+  if (isLoading) {
+    return (
+      <div
+        className="relative flex flex-col h-full select-none items-center justify-center"
+        style={{
+          width: 416,
+          height: 559,
+          background: 'linear-gradient(180deg, #1a1a2e 0%, #16213e 100%)',
+        }}
+      >
+        <div className="text-white">小伊加载中...</div>
+      </div>
+    );
+  }
 
   return (
     <div

@@ -1,85 +1,240 @@
-use tauri::WindowEvent;
+use rusqlite::{params, Connection};
+use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
+use std::sync::Mutex;
+use tauri::{AppHandle, Manager, State};
+use tauri_plugin_fs::FsExt;
 
-const MIGRATIONS: &str = r#"
-CREATE TABLE IF NOT EXISTS session (
-    id TEXT PRIMARY KEY,
-    created_at INTEGER NOT NULL,
-    updated_at INTEGER NOT NULL,
-    context TEXT NOT NULL DEFAULT '{}',
-    summary TEXT,
-    importance_score REAL DEFAULT 0.5
-);
+struct DbState {
+    conn: Mutex<Connection>,
+}
 
-CREATE TABLE IF NOT EXISTS memory (
-    id TEXT PRIMARY KEY,
-    session_id TEXT,
-    created_at INTEGER NOT NULL,
-    content TEXT NOT NULL,
-    memory_type TEXT NOT NULL,
-    emotional_tags TEXT,
-    importance_score REAL DEFAULT 0.5,
-    recall_count INTEGER DEFAULT 0,
-    last_recalled_at INTEGER,
-    FOREIGN KEY (session_id) REFERENCES session(id)
-);
+#[derive(Debug, Serialize, Deserialize)]
+struct Message {
+    id: i64,
+    role: String,
+    content: String,
+    timestamp: i64,
+}
 
-CREATE TABLE IF NOT EXISTS relationship (
-    id TEXT PRIMARY KEY,
-    user_id TEXT NOT NULL,
-    character_id TEXT NOT NULL,
-    favorability REAL DEFAULT 50.0,
-    trust REAL DEFAULT 50.0,
-    total_interactions INTEGER DEFAULT 0,
-    last_interaction_at INTEGER,
-    created_at INTEGER NOT NULL,
-    metadata TEXT
-);
+#[derive(Debug, Serialize, Deserialize)]
+struct EmotionState {
+    happiness: i32,
+    fatigue: i32,
+    loneliness: i32,
+    stress: i32,
+    affection: i32,
+}
 
-CREATE TABLE IF NOT EXISTS emotion_history (
-    id TEXT PRIMARY KEY,
-    timestamp INTEGER NOT NULL,
-    emotion_state TEXT NOT NULL,
-    trigger_type TEXT,
-    trigger_intensity REAL
-);
+fn get_db_path(app: &AppHandle) -> PathBuf {
+    let app_dir = app
+        .path()
+        .app_data_dir()
+        .expect("Failed to get app data dir");
+    std::fs::create_dir_all(&app_dir).ok();
+    app_dir.join("ai_companion.db")
+}
 
-CREATE TABLE IF NOT EXISTS settings (
-    key TEXT PRIMARY KEY,
-    value TEXT NOT NULL,
-    updated_at INTEGER NOT NULL
-);
+fn init_db(conn: &Connection) -> Result<(), rusqlite::Error> {
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            role TEXT NOT NULL,
+            content TEXT NOT NULL,
+            timestamp INTEGER NOT NULL
+        )",
+        [],
+    )?;
 
-CREATE TABLE IF NOT EXISTS character_profile (
-    id TEXT PRIMARY KEY,
-    profile_data TEXT NOT NULL,
-    created_at INTEGER NOT NULL,
-    updated_at INTEGER NOT NULL
-);
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS emotion_state (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            happiness INTEGER DEFAULT 50,
+            fatigue INTEGER DEFAULT 30,
+            loneliness INTEGER DEFAULT 40,
+            stress INTEGER DEFAULT 30,
+            affection INTEGER DEFAULT 50
+        )",
+        [],
+    )?;
 
-CREATE INDEX IF NOT EXISTS idx_memory_type ON memory(memory_type);
-CREATE INDEX IF NOT EXISTS idx_memory_importance ON memory(importance_score DESC);
-CREATE INDEX IF NOT EXISTS idx_memory_created ON memory(created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_relationship_user ON relationship(user_id);
-CREATE INDEX IF NOT EXISTS idx_emotion_timestamp ON emotion_history(timestamp DESC);
-"#;
+    conn.execute("INSERT OR IGNORE INTO emotion_state (id) VALUES (1)", [])?;
+
+    log::info!("[RustDB] Database schema ready");
+    Ok(())
+}
+
+#[tauri::command]
+fn ping(state: State<DbState>) -> String {
+    log::info!("[RustDB] ping called!");
+    let conn = state.conn.lock().map_err(|e| e.to_string()).unwrap();
+    let count: i64 = conn
+        .query_row("SELECT COUNT(*) FROM messages", [], |row| row.get(0))
+        .unwrap_or(-1);
+    log::info!("[RustDB] Message count from ping: {}", count);
+    format!("pong ({} messages)", count)
+}
+
+#[tauri::command]
+fn save_message(state: State<DbState>, role: String, content: String) -> Result<i64, String> {
+    let conn = state.conn.lock().map_err(|e| e.to_string())?;
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| e.to_string())?
+        .as_millis() as i64;
+
+    conn.execute(
+        "INSERT INTO messages (role, content, timestamp) VALUES (?1, ?2, ?3)",
+        params![role, content, timestamp],
+    )
+    .map_err(|e| e.to_string())?;
+
+    let last_id = conn.last_insert_rowid();
+    log::info!("[RustDB] Message saved id={} role={}", last_id, role);
+    Ok(last_id)
+}
+
+#[tauri::command]
+fn load_messages(state: State<DbState>, limit: i64) -> Result<Vec<Message>, String> {
+    let conn = state.conn.lock().map_err(|e| e.to_string())?;
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, role, content, timestamp FROM messages ORDER BY timestamp ASC LIMIT ?1",
+        )
+        .map_err(|e| e.to_string())?;
+
+    let messages = stmt
+        .query_map([limit], |row| {
+            Ok(Message {
+                id: row.get(0)?,
+                role: row.get(1)?,
+                content: row.get(2)?,
+                timestamp: row.get(3)?,
+            })
+        })
+        .map_err(|e| e.to_string())?
+        .filter_map(|r| r.ok())
+        .collect();
+
+    log::info!("[RustDB] Loaded messages");
+    Ok(messages)
+}
+
+#[tauri::command]
+fn save_emotion(
+    state: State<DbState>,
+    happiness: i32,
+    fatigue: i32,
+    loneliness: i32,
+    stress: i32,
+    affection: i32,
+) -> Result<(), String> {
+    let conn = state.conn.lock().map_err(|e| e.to_string())?;
+    conn.execute(
+        "UPDATE emotion_state SET happiness=?1, fatigue=?2, loneliness=?3, stress=?4, affection=?5 WHERE id=1",
+        params![happiness, fatigue, loneliness, stress, affection],
+    )
+    .map_err(|e| e.to_string())?;
+
+    log::info!("[RustDB] Emotion saved");
+    Ok(())
+}
+
+#[tauri::command]
+fn load_emotion(state: State<DbState>) -> Result<EmotionState, String> {
+    let conn = state.conn.lock().map_err(|e| e.to_string())?;
+    let mut stmt = conn
+        .prepare(
+            "SELECT happiness, fatigue, loneliness, stress, affection FROM emotion_state WHERE id=1",
+        )
+        .map_err(|e| e.to_string())?;
+
+    let emotion = stmt
+        .query_row([], |row| {
+            Ok(EmotionState {
+                happiness: row.get(0)?,
+                fatigue: row.get(1)?,
+                loneliness: row.get(2)?,
+                stress: row.get(3)?,
+                affection: row.get(4)?,
+            })
+        })
+        .map_err(|e| e.to_string())?;
+
+    Ok(emotion)
+}
+
+#[tauri::command]
+fn clear_messages(state: State<DbState>) -> Result<(), String> {
+    let conn = state.conn.lock().map_err(|e| e.to_string())?;
+    conn.execute("DELETE FROM messages", [])
+        .map_err(|e| e.to_string())?;
+    log::info!("[RustDB] Messages cleared");
+    Ok(())
+}
+
+#[tauri::command]
+fn read_photo_dir(path: String) -> Result<Vec<String>, String> {
+    log::info!("[RustFS] Reading photo dir: {}", path);
+    let entries =
+        std::fs::read_dir(&path).map_err(|e| format!("Failed to read directory: {}", e))?;
+
+    let files: Vec<String> = entries
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().is_file())
+        .filter(|e| {
+            let name = e.file_name().to_string_lossy().to_lowercase();
+            name.ends_with(".jpg")
+                || name.ends_with(".jpeg")
+                || name.ends_with(".png")
+                || name.ends_with(".gif")
+                || name.ends_with(".webp")
+                || name.ends_with(".bmp")
+        })
+        .map(|e| e.file_name().to_string_lossy().to_string())
+        .collect();
+
+    log::info!("[RustFS] Found {} photos", files.len());
+    Ok(files)
+}
+
+#[tauri::command]
+fn read_file_base64(path: String) -> Result<Vec<u8>, String> {
+    log::info!("[RustFS] Reading file: {}", path);
+    std::fs::read(&path).map_err(|e| format!("Failed to read file: {}", e))
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     env_logger::init();
-    log::info!("Starting AI Companion...");
+    log::info!("Starting AI Companion with Rust SQLite Runtime...");
 
     tauri::Builder::default()
-        .setup(|_app| {
-            log::info!("AI Companion setup complete");
-            let _ = _app;
+        .plugin(tauri_plugin_fs::init())
+        .setup(|app| {
+            let db_path = get_db_path(app.handle());
+            log::info!("[RustDB] Database path: {:?}", db_path);
+
+            let conn = Connection::open(&db_path).expect("Failed to open database");
+            init_db(&conn).expect("Failed to init database schema");
+
+            app.manage(DbState {
+                conn: Mutex::new(conn),
+            });
+
+            log::info!("AI Companion setup complete with Rust SQLite backend");
             Ok(())
         })
-        .on_window_event(|window, event| {
-            if let WindowEvent::CloseRequested { api, .. } = event {
-                window.hide().unwrap();
-                api.prevent_close();
-            }
-        })
+        .invoke_handler(tauri::generate_handler![
+            ping,
+            save_message,
+            load_messages,
+            save_emotion,
+            load_emotion,
+            clear_messages,
+            read_photo_dir,
+            read_file_base64
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

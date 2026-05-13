@@ -6,10 +6,10 @@ const MODEL = 'MiniMax-M2.7-highspeed';
 
 export function ChatPanel() {
   const [input, setInput] = useState('');
-  const [messages, setMessages] = useState<Array<{role: string; content: string}>>([]);
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const { aiConfig } = useAppStore();
+  const { aiConfig, messages, addMessage } = useAppStore();
+  const msgCount = messages.length;
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -64,16 +64,17 @@ export function ChatPanel() {
     if (!input.trim() || isLoading) return;
 
     const userMessage = input.trim();
+    console.log('[ChatPanel] handleSend called with:', userMessage);
     setInput('');
-    setMessages(prev => [...prev, { role: 'user', content: userMessage }]);
+    await addMessage({ role: 'user', content: userMessage });
     setIsLoading(true);
 
     try {
       const reply = await callMiniMax(userMessage);
-      setMessages(prev => [...prev, { role: 'assistant', content: reply }]);
+      addMessage({ role: 'assistant', content: reply });
     } catch (error) {
       console.error('AI调用失败:', error);
-      setMessages(prev => [...prev, { role: 'assistant', content: '抱歉，小伊暂时离线了~' }]);
+      addMessage({ role: 'assistant', content: '抱歉，小伊暂时离线了~' });
     } finally {
       setIsLoading(false);
     }
@@ -92,7 +93,7 @@ export function ChatPanel() {
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
         {messages.length === 0 && (
           <div className="text-center text-sm" style={{ color: '#a0a0a0' }}>
-            点击角色开始对话~
+            点击角色开始对话~ ({msgCount}条)
           </div>
         )}
         
