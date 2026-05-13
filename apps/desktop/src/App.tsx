@@ -3,6 +3,7 @@ import { CharacterDisplay } from './CharacterDisplay';
 import { ChatPanel } from './ChatPanel';
 import { EmotionDisplay } from './EmotionDisplay';
 import { SettingsPanel } from './SettingsPanel';
+import { ScreenWatcher } from './ScreenWatcher';
 import { useAppStore } from './store';
 
 export default function App() {
@@ -66,6 +67,9 @@ export default function App() {
         <ChatPanel />
       </div>
       </div>
+
+      {/* 主动交互监控 */}
+      <ScreenWatcher />
 
       {/* 设置面板 */}
       {isSettingsOpen && (

@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 use tauri::{AppHandle, Manager, State};
 use tauri_plugin_fs::FsExt;
+use screenshots::Screen;
 
 struct DbState {
     conn: Mutex<Connection>,
@@ -204,6 +205,41 @@ fn read_file_base64(path: String) -> Result<Vec<u8>, String> {
     std::fs::read(&path).map_err(|e| format!("Failed to read file: {}", e))
 }
 
+#[tauri::command]
+fn take_screenshot() -> Result<String, String> {
+    log::info!("[RustScreen] Taking screenshot...");
+    let screens = Screen::all().map_err(|e| format!("Failed to get screens: {}", e))?;
+    if screens.is_empty() {
+        return Err("No screens found".to_string());
+    }
+
+    // 截取主屏幕
+    let screen = &screens[0];
+    let image = screen.capture().map_err(|e| format!("Failed to capture: {}", e))?;
+
+    // 转换为PNG bytes
+    let mut png_bytes: Vec<u8> = Vec::new();
+    use image::ImageEncoder;
+    let encoder = image::codecs::png::PngEncoder::new(&mut png_bytes);
+    encoder.write_image(
+        &image,
+        image.width(),
+        image.height(),
+        image::ExtendedColorType::Rgba8,
+    )
+    .map_err(|e| format!("Failed to encode PNG: {}", e))?;
+
+    // 转为base64
+    use base64::Engine;
+    let base64_str = base64::engine::general_purpose::STANDARD.encode(&png_bytes);
+
+    log::info!(
+        "[RustScreen] Screenshot taken, size: {} bytes",
+        base64_str.len()
+    );
+    Ok(base64_str)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     env_logger::init();
@@ -233,7 +269,8 @@ pub fn run() {
             load_emotion,
             clear_messages,
             read_photo_dir,
-            read_file_base64
+            read_file_base64,
+            take_screenshot
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
