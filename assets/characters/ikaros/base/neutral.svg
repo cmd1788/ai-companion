@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 500" width="400" height="500">
+  <defs>
+    <linearGradient id="hairGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#f0f0f0"/>
+      <stop offset="100%" style="stop-color:#d0d0d0"/>
+    </linearGradient>
+    <linearGradient id="eyeGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#00d4aa"/>
+      <stop offset="100%" style="stop-color:#0088aa"/>
+    </linearGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="2" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Hair Back -->
+  <ellipse cx="200" cy="180" rx="130" ry="140" fill="url(#hairGrad)"/>
+  <path d="M70 180 Q60 350 80 450 L90 450 Q75 350 85 200 Z" fill="url(#hairGrad)"/>
+  <path d="M330 180 Q340 350 320 450 L310 450 Q325 350 315 200 Z" fill="url(#hairGrad)"/>
+
+  <!-- Face -->
+  <ellipse cx="200" cy="200" rx="90" ry="100" fill="#faf5f0"/>
+
+  <!-- Hair Front -->
+  <path d="M110 140 Q120 80 200 70 Q280 80 290 140 Q280 120 200 115 Q120 120 110 140" fill="url(#hairGrad)"/>
+  <path d="M120 140 Q140 100 200 90 Q260 100 280 140" fill="url(#hairGrad)" stroke="none"/>
+
+  <!-- Hair Strands -->
+  <path d="M130 150 Q150 180 140 220" stroke="#e0e0e0" stroke-width="3" fill="none"/>
+  <path d="M160 130 Q170 170 165 200" stroke="#e0e0e0" stroke-width="2" fill="none"/>
+  <path d="M270 150 Q250 180 260 220" stroke="#e0e0e0" stroke-width="3" fill="none"/>
+  <path d="M240 130 Q230 170 235 200" stroke="#e0e0e0" stroke-width="2" fill="none"/>
+
+  <!-- Eyes -->
+  <g filter="url(#glow)">
+    <!-- Left Eye -->
+    <ellipse cx="165" cy="195" rx="22" ry="25" fill="#ffffff"/>
+    <ellipse cx="165" cy="195" rx="15" ry="17" fill="url(#eyeGrad)"/>
+    <ellipse cx="165" cy="195" rx="6" ry="7" fill="#000"/>
+    <ellipse cx="162" cy="190" rx="3" ry="4" fill="#ffffff" opacity="0.8"/>
+
+    <!-- Right Eye -->
+    <ellipse cx="235" cy="195" rx="22" ry="25" fill="#ffffff"/>
+    <ellipse cx="235" cy="195" rx="15" ry="17" fill="url(#eyeGrad)"/>
+    <ellipse cx="235" cy="195" rx="6" ry="7" fill="#000"/>
+    <ellipse cx="232" cy="190" rx="3" ry="4" fill="#ffffff" opacity="0.8"/>
+  </g>
+
+  <!-- Eyebrows -->
+  <path d="M145 165 Q165 160 180 165" stroke="#d0d0d0" stroke-width="2" fill="none"/>
+  <path d="M220 165 Q235 160 255 165" stroke="#d0d0d0" stroke-width="2" fill="none"/>
+
+  <!-- Nose -->
+  <path d="M200 210 L198 225 L202 225" stroke="#e0d0d0" stroke-width="1" fill="none"/>
+
+  <!-- Mouth -->
+  <path d="M190 245 Q200 248 210 245" stroke="#d0a0a0" stroke-width="2" fill="none"/>
+
+  <!-- Blush -->
+  <ellipse cx="145" cy="225" rx="15" ry="8" fill="#ffb0b0" opacity="0.3"/>
+  <ellipse cx="255" cy="225" rx="15" ry="8" fill="#ffb0b0" opacity="0.3"/>
+
+  <!-- Pink Chain -->
+  <path d="M170 290 Q140 300 130 350 Q125 380 140 400" stroke="#ff69b4" stroke-width="4" fill="none"/>
+  <path d="M230 290 Q260 300 270 350 Q275 380 260 400" stroke="#ff69b4" stroke-width="4" fill="none"/>
+  <circle cx="140" cy="400" r="6" fill="#ff69b4"/>
+  <circle cx="260" cy="400" r="6" fill="#ff69b4"/>
+
+  <!-- Neck -->
+  <path d="M185 290 L185 310 Q200 315 215 310 L215 290" fill="#faf5f0"/>
+
+  <!-- Body hint -->
+  <path d="M150 320 Q200 310 250 320 L260 400 Q200 410 140 400 Z" fill="#f5f0f0" stroke="#e0e0e0" stroke-width="1"/>
+</svg>
