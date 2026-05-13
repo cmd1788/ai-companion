@@ -3,7 +3,6 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::Mutex;
 use tauri::{AppHandle, Manager, State};
-use tauri_plugin_fs::FsExt;
 use screenshots::Screen;
 
 struct DbState {
@@ -25,6 +24,13 @@ struct EmotionState {
     loneliness: i32,
     stress: i32,
     affection: i32,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct Memory {
+    id: i64,
+    content: String,
+    timestamp: i64,
 }
 
 fn get_db_path(app: &AppHandle) -> PathBuf {
@@ -61,6 +67,15 @@ fn init_db(conn: &Connection) -> Result<(), rusqlite::Error> {
 
     conn.execute("INSERT OR IGNORE INTO emotion_state (id) VALUES (1)", [])?;
 
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS memories (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            content TEXT NOT NULL,
+            timestamp INTEGER NOT NULL
+        )",
+        [],
+    )?;
+
     log::info!("[RustDB] Database schema ready");
     Ok(())
 }
@@ -72,7 +87,6 @@ fn ping(state: State<DbState>) -> String {
     let count: i64 = conn
         .query_row("SELECT COUNT(*) FROM messages", [], |row| row.get(0))
         .unwrap_or(-1);
-    log::info!("[RustDB] Message count from ping: {}", count);
     format!("pong ({} messages)", count)
 }
 
@@ -91,7 +105,7 @@ fn save_message(state: State<DbState>, role: String, content: String) -> Result<
     .map_err(|e| e.to_string())?;
 
     let last_id = conn.last_insert_rowid();
-    log::info!("[RustDB] Message saved id={} role={}", last_id, role);
+    log::info!("[RustDB] Message saved id={}", last_id);
     Ok(last_id)
 }
 
@@ -104,7 +118,7 @@ fn load_messages(state: State<DbState>, limit: i64) -> Result<Vec<Message>, Stri
         )
         .map_err(|e| e.to_string())?;
 
-    let messages = stmt
+    let messages: Vec<Message> = stmt
         .query_map([limit], |row| {
             Ok(Message {
                 id: row.get(0)?,
@@ -117,7 +131,7 @@ fn load_messages(state: State<DbState>, limit: i64) -> Result<Vec<Message>, Stri
         .filter_map(|r| r.ok())
         .collect();
 
-    log::info!("[RustDB] Loaded messages");
+    log::info!("[RustDB] Loaded {} messages", messages.len());
     Ok(messages)
 }
 
@@ -175,6 +189,48 @@ fn clear_messages(state: State<DbState>) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn save_memory(state: State<DbState>, content: String) -> Result<i64, String> {
+    let conn = state.conn.lock().map_err(|e| e.to_string())?;
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| e.to_string())?
+        .as_millis() as i64;
+
+    conn.execute(
+        "INSERT INTO memories (content, timestamp) VALUES (?1, ?2)",
+        params![content, timestamp],
+    )
+    .map_err(|e| e.to_string())?;
+
+    let last_id = conn.last_insert_rowid();
+    log::info!("[RustDB] Memory saved: {}", content);
+    Ok(last_id)
+}
+
+#[tauri::command]
+fn load_memories(state: State<DbState>) -> Result<Vec<Memory>, String> {
+    let conn = state.conn.lock().map_err(|e| e.to_string())?;
+    let mut stmt = conn
+        .prepare("SELECT id, content, timestamp FROM memories ORDER BY timestamp DESC LIMIT 50")
+        .map_err(|e| e.to_string())?;
+
+    let memories: Vec<Memory> = stmt
+        .query_map([], |row| {
+            Ok(Memory {
+                id: row.get(0)?,
+                content: row.get(1)?,
+                timestamp: row.get(2)?,
+            })
+        })
+        .map_err(|e| e.to_string())?
+        .filter_map(|r| r.ok())
+        .collect();
+
+    log::info!("[RustDB] Loaded {} memories", memories.len());
+    Ok(memories)
+}
+
+#[tauri::command]
 fn read_photo_dir(path: String) -> Result<Vec<String>, String> {
     log::info!("[RustFS] Reading photo dir: {}", path);
     let entries =
@@ -213,11 +269,9 @@ fn take_screenshot() -> Result<String, String> {
         return Err("No screens found".to_string());
     }
 
-    // 截取主屏幕
     let screen = &screens[0];
     let image = screen.capture().map_err(|e| format!("Failed to capture: {}", e))?;
 
-    // 转换为PNG bytes
     let mut png_bytes: Vec<u8> = Vec::new();
     use image::ImageEncoder;
     let encoder = image::codecs::png::PngEncoder::new(&mut png_bytes);
@@ -229,14 +283,10 @@ fn take_screenshot() -> Result<String, String> {
     )
     .map_err(|e| format!("Failed to encode PNG: {}", e))?;
 
-    // 转为base64
     use base64::Engine;
     let base64_str = base64::engine::general_purpose::STANDARD.encode(&png_bytes);
 
-    log::info!(
-        "[RustScreen] Screenshot taken, size: {} bytes",
-        base64_str.len()
-    );
+    log::info!("[RustScreen] Screenshot taken, size: {} bytes", base64_str.len());
     Ok(base64_str)
 }
 
@@ -268,6 +318,8 @@ pub fn run() {
             save_emotion,
             load_emotion,
             clear_messages,
+            save_memory,
+            load_memories,
             read_photo_dir,
             read_file_base64,
             take_screenshot

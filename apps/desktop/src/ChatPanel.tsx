@@ -8,7 +8,7 @@ export function ChatPanel() {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const { aiConfig, messages, addMessage } = useAppStore();
+  const { aiConfig, messages, addMessage, updateEmotionFromChat, memories } = useAppStore();
   const msgCount = messages.length;
 
   const scrollToBottom = () => {
@@ -19,13 +19,24 @@ export function ChatPanel() {
     scrollToBottom();
   }, [messages]);
 
+  // 构建带记忆的系统提示
+  const buildSystemPrompt = () => {
+    let prompt = '你是小伊，一个超级可爱、活泼开朗、话痨、粘人、爱撒娇的AI少女。你用~呀啦哦呢嘿等语气词结尾。不要太长，保持活泼俏皮的风格。';
+    
+    if (memories.length > 0) {
+      const memoryTexts = memories.slice(0, 5).map(m => m.content).join('；');
+      prompt += `\n\n你还记得关于主人的一些事情：${memoryTexts}`;
+    }
+    
+    return prompt;
+  };
+
   const callMiniMax = async (userMessage: string): Promise<string> => {
     const apiKey = aiConfig.apiKey || '';
     if (!apiKey) {
       throw new Error('请先在设置中配置MiniMax API Key');
     }
     
-    // 构建对话历史
     const conversationHistory = messages.map(m => ({
       role: m.role as 'user' | 'assistant',
       content: m.content
@@ -42,7 +53,7 @@ export function ChatPanel() {
         messages: [
           {
             role: 'system',
-            content: `你是小伊，一个超级可爱、活泼开朗、话痨、粘人、爱撒娇的AI少女。你用~呀啦哦呢嘿等语气词结尾。不要太长，保持活泼俏皮的风格。`
+            content: buildSystemPrompt()
           },
           ...conversationHistory,
           { role: 'user', content: userMessage }
@@ -64,7 +75,7 @@ export function ChatPanel() {
     if (!input.trim() || isLoading) return;
 
     const userMessage = input.trim();
-    console.log('[ChatPanel] handleSend called with:', userMessage);
+    console.log('[ChatPanel] Sending:', userMessage);
     setInput('');
     await addMessage({ role: 'user', content: userMessage });
     setIsLoading(true);
@@ -72,6 +83,9 @@ export function ChatPanel() {
     try {
       const reply = await callMiniMax(userMessage);
       addMessage({ role: 'assistant', content: reply });
+      
+      // 更新情绪和记忆
+      updateEmotionFromChat(userMessage, reply);
     } catch (error) {
       console.error('AI调用失败:', error);
       addMessage({ role: 'assistant', content: '抱歉，小伊暂时离线了~' });
@@ -89,7 +103,6 @@ export function ChatPanel() {
 
   return (
     <div className="flex flex-col h-full">
-      {/* 消息列表 */}
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
         {messages.length === 0 && (
           <div className="text-center text-sm" style={{ color: '#a0a0a0' }}>
@@ -130,7 +143,6 @@ export function ChatPanel() {
         <div ref={messagesEndRef} />
       </div>
 
-      {/* 输入框 */}
       <div
         className="flex items-center gap-2 p-3"
         style={{
