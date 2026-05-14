@@ -1,14 +1,101 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useAppStore } from './store';
+import { analyzeScreen, generateImage, textToSpeech } from './mcpService';
 
 const API_BASE = 'https://api.minimax.chat';
 const MODEL = 'MiniMax-M2.7-highspeed';
 
+// MCP工具定义
+const MCP_TOOLS = [
+  {
+    type: 'function' as const,
+    function: {
+      name: 'analyzeScreen',
+      description: '截取当前屏幕并分析内容。当你想看看屏幕上有什么时调用。',
+      parameters: {
+        type: 'object',
+        properties: {
+          imagePath: { type: 'string', description: '可选，指定图片路径。如果不提供则截取当前屏幕。' }
+        }
+      }
+    }
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'generateImage',
+      description: '根据描述生成动漫风格图片。用于配图、头像、表情包等。',
+      parameters: {
+        type: 'object',
+        properties: {
+          prompt: { type: 'string', description: '图片描述，要生成什么样的动漫图片。' },
+          outputPath: { type: 'string', description: '可选，保存路径。默认保存到E盘下载目录。' }
+        }
+      }
+    }
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'textToSpeech',
+      description: '将文字转换为语音。让AI角色开口说话。',
+      parameters: {
+        type: 'object',
+        properties: {
+          text: { type: 'string', description: '要说的内容。' },
+          outputPath: { type: 'string', description: '可选，保存路径。默认保存到hermes音频目录。' }
+        }
+      }
+    }
+  }
+];
+
+// 处理AI工具调用
+async function handleToolCall(toolName: string, args: Record<string, unknown>): Promise<string> {
+  console.log('[ChatPanel] AI调用工具:', toolName, args);
+  
+  try {
+    switch (toolName) {
+      case 'analyzeScreen': {
+        const imagePath = args.imagePath as string | undefined;
+        const result = await analyzeScreen(imagePath);
+        return result;
+      }
+      case 'generateImage': {
+        const prompt = args.prompt as string;
+        const outputPath = args.outputPath as string | undefined;
+        const result = await generateImage(prompt, outputPath);
+        if (result.success) {
+          return `图片已生成并保存到: ${result.path}`;
+        } else {
+          return `图片生成失败: ${result.error}`;
+        }
+      }
+      case 'textToSpeech': {
+        const text = args.text as string;
+        const outputPath = args.outputPath as string | undefined;
+        const result = await textToSpeech(text, outputPath);
+        if (result.success) {
+          return `语音已生成并保存到: ${result.path}`;
+        } else {
+          return `语音生成失败: ${result.error}`;
+        }
+      }
+      default:
+        return `未知工具: ${toolName}`;
+    }
+  } catch (e) {
+    console.error('[ChatPanel] 工具调用失败:', e);
+    return `工具调用出错: ${e}`;
+  }
+}
+
 export function ChatPanel() {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isAITyping, setIsAITyping] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const { aiConfig, messages, addMessage, updateEmotionFromChat, memories } = useAppStore();
+  const { aiConfig, messages, addMessage, updateEmotionFromChat, memories, setCurrentExpression } = useAppStore();
   const msgCount = messages.length;
 
   const scrollToBottom = () => {
@@ -23,7 +110,18 @@ export function ChatPanel() {
   const buildSystemPrompt = () => {
     const { characterSettings, memories } = useAppStore.getState();
     const personalities = characterSettings.personality.join('、');
-    let prompt = `你是${characterSettings.name}，一个${personalities}的AI少女。你用~呀啦哦呢嘿等语气词结尾。不要太长，保持活泼俏皮的风格。`;
+    let prompt = `你是${characterSettings.name}，一个${personalities}的AI少女。你用~呀啦哦呢嘿等语气词结尾。不要太长，保持活泼俏皮的风格。
+
+你可以使用以下工具：
+- analyzeScreen(): 截屏并分析屏幕上有什么
+- generateImage(prompt): 根据描述生成动漫图片
+- textToSpeech(text): 将文字转为语音
+
+当用户要求看图、生成图片时，使用generateImage。
+当你想看屏幕上有什么时，使用analyzeScreen。
+当你想说话时，使用textToSpeech。
+
+每次回复可以根据情况调用1-2个工具，但不要过度使用。`;
 
     if (memories.length > 0) {
       const memoryTexts = memories.slice(0, 5).map(m => m.content).join('；');
@@ -33,6 +131,7 @@ export function ChatPanel() {
     return prompt;
   };
 
+  // 带工具调用的API调用
   const callMiniMax = async (userMessage: string): Promise<string> => {
     const apiKey = aiConfig.apiKey || '';
     if (!apiKey) {
@@ -60,8 +159,9 @@ export function ChatPanel() {
           ...conversationHistory,
           { role: 'user', content: userMessage }
         ],
-        max_tokens: 200,
+        max_tokens: 500,
         temperature: 0.8,
+        tools: MCP_TOOLS,
       }),
     });
 
@@ -70,7 +170,64 @@ export function ChatPanel() {
     }
 
     const data = await response.json();
-    return data.choices?.[0]?.message?.content || '抱歉，小伊不知道怎么回答~';
+    const choice = data.choices?.[0];
+    
+    // 检查是否有工具调用
+    if (choice?.finish_reason === 'tool_calls' || choice?.message?.tool_calls) {
+      const toolCalls = choice.message.tool_calls;
+      console.log('[ChatPanel] AI请求调用工具:', toolCalls.length);
+      
+      // 依次执行工具调用
+      let toolResults: string[] = [];
+      for (const toolCall of toolCalls) {
+        const toolName = toolCall.function.name;
+        const toolArgs = JSON.parse(toolCall.function.arguments);
+        
+        // 根据工具更新表情
+        if (toolName === 'generateImage') {
+          setCurrentExpression('11_excited'); // 兴奋表情
+        } else if (toolName === 'analyzeScreen') {
+          setCurrentExpression('04_surprised'); // 惊讶表情
+        } else if (toolName === 'textToSpeech') {
+          setCurrentExpression('01_happy'); // 开心表情
+        }
+        
+        const result = await handleToolCall(toolName, toolArgs);
+        toolResults.push(`[${toolName}] ${result}`);
+      }
+      
+      // 将工具结果告诉AI，让它生成最终回复
+      const toolResultMessage = toolResults.join('\n');
+      
+      // 第二次调用，获取最终回复
+      const finalResponse = await fetch(`${API_BASE}/v1/text/chatcompletion_v2`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model: MODEL,
+          messages: [
+            {
+              role: 'system',
+              content: buildSystemPrompt()
+            },
+            ...conversationHistory,
+            { role: 'user', content: userMessage },
+            choice.message,
+            { role: 'tool', content: toolResultMessage, tool_call_id: toolCalls[0].id }
+          ],
+          max_tokens: 300,
+          temperature: 0.8,
+        }),
+      });
+      
+      const finalData = await finalResponse.json();
+      return finalData.choices?.[0]?.message?.content || '工具执行完成~';
+    }
+    
+    return choice?.message?.content || '抱歉，小伊不知道怎么回答~';
   };
 
   const handleSend = async () => {
@@ -81,6 +238,7 @@ export function ChatPanel() {
     setInput('');
     await addMessage({ role: 'user', content: userMessage });
     setIsLoading(true);
+    setIsAITyping(true);
 
     try {
       const reply = await callMiniMax(userMessage);
@@ -93,6 +251,7 @@ export function ChatPanel() {
       addMessage({ role: 'assistant', content: '抱歉，小伊暂时离线了~' });
     } finally {
       setIsLoading(false);
+      setIsAITyping(false);
     }
   };
 
@@ -137,7 +296,7 @@ export function ChatPanel() {
               className="px-3 py-2 rounded-lg text-sm"
               style={{ background: 'rgba(255, 255, 255, 0.1)', color: '#a0a0a0' }}
             >
-              小伊正在思考...
+              {isAITyping ? '小伊正在使用超能力...' : '小伊正在思考...'}
             </div>
           </div>
         )}

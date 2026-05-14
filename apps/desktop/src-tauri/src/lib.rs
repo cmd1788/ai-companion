@@ -262,7 +262,19 @@ fn read_file_base64(path: String) -> Result<Vec<u8>, String> {
 }
 
 #[tauri::command]
-fn take_screenshot() -> Result<String, String> {
+fn write_binary_file(path: String, data: Vec<u8>) -> Result<(), String> {
+    log::info!("[RustFS] Writing binary file: {}", path);
+    // 确保目录存在
+    if let Some(parent) = std::path::Path::new(&path).parent() {
+        std::fs::create_dir_all(parent).map_err(|e| format!("Failed to create dir: {}", e))?;
+    }
+    std::fs::write(&path, &data).map_err(|e| format!("Failed to write file: {}", e))?;
+    log::info!("[RustFS] File written: {} ({} bytes)", path, data.len());
+    Ok(())
+}
+
+#[tauri::command]
+fn capture_screen() -> Result<String, String> {
     log::info!("[RustScreen] Taking screenshot...");
     let screens = Screen::all().map_err(|e| format!("Failed to get screens: {}", e))?;
     if screens.is_empty() {
@@ -322,7 +334,8 @@ pub fn run() {
             load_memories,
             read_photo_dir,
             read_file_base64,
-            take_screenshot
+            write_binary_file,
+            capture_screen
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
