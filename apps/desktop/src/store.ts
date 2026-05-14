@@ -109,7 +109,7 @@ const DEFAULT_EMOTION: EmotionState = {
   affection: 60,
 };
 
-const REAL_API_KEY = 'sk-cp-eZ_KsU3aRH1rcNGPfFlBdIyFqLt4wfIZm9LgQ8dyHJEjUFXBwfqGjbK9Ne7sBIVGpoiR6okgH-SDRbSelgVtsNTaT3wUkTY5ox8TS-EWyRaDFc9a_uj1TKY';
+const REAL_API_KEY = ''; // API Key 由用户在设置界面填写，永不硬编码
 
 // 情绪关键词检测
 function analyzeSentiment(text: string): { keyword: string; delta: Partial<EmotionState>; expression: string } | null {

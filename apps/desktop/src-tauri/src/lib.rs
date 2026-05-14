@@ -388,6 +388,167 @@ fn hermes_stop() -> Result<(), String> {
     Ok(())
 }
 
+// ========== Web Search Command ==========
+
+#[derive(Debug, Serialize, Deserialize)]
+struct SearchResult {
+    title: String,
+    url: String,
+    snippet: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct SearchResponse {
+    ok: bool,
+    results: Vec<SearchResult>,
+    source: String,
+    error: Option<String>,
+}
+
+#[tauri::command]
+async fn web_search(query: String, api_key: Option<String>) -> Result<SearchResponse, String> {
+    log::info!("[WebSearch] Searching for: {}", query);
+    
+    // 如果提供了 MiniMax API Key，优先使用 MiniMax MCP 搜索
+    // 否则尝试使用 reqwest 调用公共搜索 API
+    if let Some(key) = api_key {
+        if !key.is_empty() {
+            return web_search_minimax(&query, &key).await;
+        }
+    }
+    
+    // 尝试使用 reqwest 调用搜索（网络可能受限）
+    web_search_fallback(&query).await
+}
+
+async fn web_search_minimax(query: &str, api_key: &str) -> Result<SearchResponse, String> {
+    log::info!("[WebSearch] Using MiniMax MCP search API");
+    
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .build()
+        .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
+    
+    // MiniMax 没有官方搜索 API，使用 Bing API 或返回错误
+    // 这里检查是否有用户配置的 Bing API Key
+    let bing_key = std::env::var("BING_API_KEY").ok();
+    
+    if let Some(key) = bing_key {
+        return bing_search(&client, query, &key).await;
+    }
+    
+    // 没有可用的搜索 API，返回 BLOCKED_API_CONFIG
+    Ok(SearchResponse {
+        ok: false,
+        results: vec![],
+        source: "minimax".to_string(),
+        error: Some("BLOCKED_API_CONFIG: No search API key configured. Set BING_API_KEY env var or use MiniMax MCP search tool.".to_string()),
+    })
+}
+
+async fn bing_search(client: &reqwest::Client, query: &str, api_key: &str) -> Result<SearchResponse, String> {
+    log::info!("[WebSearch] Using Bing Search API");
+    
+    let url = format!(
+        "https://api.bing.microsoft.com/v7.0/search?q={}&count=5&responseFilter=WebPages",
+        urlencoding::encode(query)
+    );
+    
+    let response = client
+        .get(&url)
+        .header("Ocp-Apim-Subscription-Key", api_key)
+        .send()
+        .await
+        .map_err(|e| format!("Bing API request failed: {}", e))?;
+    
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Ok(SearchResponse {
+            ok: false,
+            results: vec![],
+            source: "bing".to_string(),
+            error: Some(format!("Bing API error {}: {}", status, body)),
+        });
+    }
+    
+    #[derive(Deserialize)]
+    struct BingResponse {
+        webPages: Option<WebPages>,
+    }
+    
+    #[derive(Deserialize)]
+    struct WebPages {
+        value: Option<Vec<BingResult>>,
+    }
+    
+    #[derive(Deserialize)]
+    struct BingResult {
+        name: String,
+        url: String,
+        snippet: String,
+    }
+    
+    let bing_resp: BingResponse = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse Bing response: {}", e))?;
+    
+    let results: Vec<SearchResult> = bing_resp
+        .webPages
+        .and_then(|wp| wp.value)
+        .unwrap_or_default()
+        .into_iter()
+        .take(5)
+        .map(|r| SearchResult {
+            title: r.name,
+            url: r.url,
+            snippet: r.snippet,
+        })
+        .collect();
+    
+    log::info!("[WebSearch] Bing returned {} results", results.len());
+    
+    Ok(SearchResponse {
+        ok: true,
+        results,
+        source: "bing".to_string(),
+        error: None,
+    })
+}
+
+async fn web_search_fallback(query: &str) -> Result<SearchResponse, String> {
+    log::info!("[WebSearch] Trying fallback search methods");
+    
+    // 尝试使用 MiniMax MCP 工具（如果有 MCP server）
+    // 由于 MCP server 是独立进程，这里返回 NOT_CONFIGURED
+    
+    Ok(SearchResponse {
+        ok: false,
+        results: vec![],
+        source: "fallback".to_string(),
+        error: Some("BLOCKED_API_CONFIG: No search API available. Options: 1) Set BING_API_KEY environment variable, 2) Use MiniMax MCP search tool in browser, 3) Implement custom search backend.".to_string()),
+    })
+}
+
+// URL encoding helper
+mod urlencoding {
+    pub fn encode(input: &str) -> String {
+        let mut result = String::new();
+        for byte in input.bytes() {
+            match byte {
+                b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                    result.push(byte as char);
+                }
+                _ => {
+                    result.push_str(&format!("%{:02X}", byte));
+                }
+            }
+        }
+        result
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     env_logger::init();
@@ -424,7 +585,8 @@ pub fn run() {
             capture_screen,
             hermes_status,
             hermes_start,
-            hermes_stop
+            hermes_stop,
+            web_search
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

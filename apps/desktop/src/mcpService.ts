@@ -1,12 +1,32 @@
 // MiniMax MCP服务 - AI自主调用
 // 使用 Runtime Adapter 处理 Tauri 调用，不直接调用 invoke
+// API Key 从设置中读取，不硬编码
 
 import { runtime } from './runtime/runtimeAdapter';
+import { useAppStore } from './store';
 
-const API_KEY = 'sk-cp-...1TKY';
 const VISION_API_URL = 'https://api.minimax.chat/v1/vision';
 const IMAGE_API_URL = 'https://api.minimax.chat/v1/image_generation';
 const TTS_API_URL = 'https://api.minimax.chat/v1/t2a_v2';
+const SEARCH_API_URL = 'https://api.minimax.chat/v1/search'; // MiniMax 搜索 API
+
+// 获取当前 API Key - 从设置中读取，永不硬编码
+function getApiKey(): string {
+  try {
+    const state = useAppStore.getState();
+    return state.aiConfig?.apiKey || '';
+  } catch {
+    return '';
+  }
+}
+
+// 获取 Masked Key 用于显示
+export function getMaskedApiKey(): string {
+  const key = getApiKey();
+  if (!key) return '[未填写]';
+  if (key.length < 8) return '***';
+  return key.substring(0, 6) + '...' + key.substring(key.length - 4);
+}
 
 // Base64转数组
 function arrayToBase64(bytes: Uint8Array): string {
@@ -43,11 +63,16 @@ export async function analyzeScreen(imagePath?: string): Promise<string> {
       base64 = captureResult.data || '';
     }
     
+    const apiKey = getApiKey();
+    if (!apiKey) {
+      return 'API Key 未配置，请在设置中填写 MiniMax API Key';
+    }
+    
     const response = await fetch(VISION_API_URL, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${API_KEY}`,
+        'Authorization': `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
         model: 'MiniMax-vism',
@@ -89,11 +114,16 @@ export async function generateImage(prompt: string, outputPath?: string): Promis
     // 构建提示词 - 确保生成动漫风格
     const enhancedPrompt = `${prompt}, anime style illustration, high quality, vibrant colors, cute anime character`;
     
+    const apiKey = getApiKey();
+    if (!apiKey) {
+      return { success: false, error: 'API Key 未配置，请在设置中填写 MiniMax API Key' };
+    }
+    
     const response = await fetch(IMAGE_API_URL, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${API_KEY}`,
+        'Authorization': `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
         model: 'image-01',
@@ -145,11 +175,16 @@ export async function textToSpeech(text: string, outputPath?: string): Promise<{
   try {
     const targetPath = outputPath || 'C:/Users/asus/AppData/Local/hermes/audio_cache/temp_tts.mp3';
     
+    const apiKey = getApiKey();
+    if (!apiKey) {
+      return { success: false, error: 'API Key 未配置，请在设置中填写 MiniMax API Key' };
+    }
+    
     const response = await fetch(TTS_API_URL, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${API_KEY}`,
+        'Authorization': `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
         model: 'speech-02-had',
@@ -201,6 +236,64 @@ export interface MCPCapabilities {
   analyzeScreen: (imagePath?: string) => Promise<string>;
   generateImage: (prompt: string, outputPath?: string) => Promise<{ success: boolean; path?: string; url?: string; error?: string }>;
   textToSpeech: (text: string, outputPath?: string) => Promise<{ success: boolean; path?: string; error?: string }>;
+  webSearch: (query: string) => Promise<{ success: boolean; results?: Array<{title: string; url: string; snippet: string}>; error?: string }>;
+}
+
+// 联网搜索 - 使用 MiniMax 搜索能力
+export async function webSearch(query: string): Promise<{ success: boolean; results?: Array<{title: string; url: string; snippet: string}>; error?: string }> {
+  try {
+    const apiKey = getApiKey();
+    if (!apiKey) {
+      return { success: false, error: 'API Key 未配置，请在设置中填写 MiniMax API Key' };
+    }
+
+    // MiniMax 搜索 API 端点
+    const response = await fetch(SEARCH_API_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: 'MiniMax-Search',
+        query: query,
+        max_results: 5,
+      }),
+    });
+
+    if (!response.ok) {
+      // 如果是 404，说明 MiniMax 没有搜索 API，标记为需要 MCP Bridge
+      if (response.status === 404) {
+        return { 
+          success: false, 
+          error: 'BLOCKED_MCP_BRIDGE: MiniMax 搜索 API 不存在。请确认套餐支持联网搜索 MCP，或使用 Coding Agent/OpenClaw 工具调用搜索能力。' 
+        };
+      }
+      return { success: false, error: `API 错误: ${response.status}` };
+    }
+
+    const data = await response.json();
+    
+    // 解析搜索结果
+    if (data.error) {
+      return { success: false, error: data.error.message || '搜索失败' };
+    }
+
+    // 根据 MiniMax API 响应格式调整
+    const results = data.results || data.data || [];
+    
+    return { 
+      success: true, 
+      results: results.map((r: any) => ({
+        title: r.title || r.name || '',
+        url: r.url || r.link || '',
+        snippet: r.snippet || r.description || '',
+      })),
+    };
+  } catch (e) {
+    console.error('[MCP] Web search error:', e);
+    return { success: false, error: `搜索失败: ${e}` };
+  }
 }
 
 // 导出AI可用的MCP工具
@@ -208,4 +301,5 @@ export const mcpTools: MCPCapabilities = {
   analyzeScreen,
   generateImage,
   textToSpeech,
+  webSearch,
 };

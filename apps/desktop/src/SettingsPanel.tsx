@@ -824,7 +824,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
                 <div className="grid grid-cols-2 gap-3">
                   {[
                     { value: 'mock', label: '🔮 Mock', desc: '测试模式，返回模拟数据', color: '#a855f7' },
-                    { value: 'minimax', label: '🤖 MiniMax', desc: '使用 MiniMax API 联网', color: '#22c55e' },
+                    { value: 'minimax_mcp', label: '🤖 MiniMax MCP', desc: '使用 MiniMax 联网搜索', color: '#22c55e' },
                     { value: 'fetch', label: '🌍 Browser', desc: '浏览器直接请求(可能CORS)', color: '#3b82f6' },
                     { value: 'disabled', label: '❌ 禁用', desc: '关闭所有联网功能', color: '#ef4444' },
                   ].map(item => (
@@ -844,6 +844,110 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
                   ))}
                 </div>
               </div>
+
+              {/* MiniMax API Key 设置 */}
+              {networkSettings.provider === 'minimax_mcp' && (
+                <div
+                  className="p-6 rounded-2xl"
+                  style={{ background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.2)' }}
+                >
+                  <div className="flex items-center gap-2 mb-4">
+                    <span className="text-lg">🔑</span>
+                    <h3 className="text-base font-semibold" style={{ color: '#22c55e' }}>MiniMax API Key</h3>
+                  </div>
+                  <p className="text-xs mb-4" style={{ color: '#888' }}>
+                    请填写您的 MiniMax API Key，用于联网搜索功能。Key 将安全存储，不会上传到 Git。
+                  </p>
+                  <div className="space-y-3">
+                    <input
+                      type="password"
+                      value={aiConfig.apiKey || ''}
+                      onChange={(e) => setAIConfig({ ...aiConfig, apiKey: e.target.value })}
+                      placeholder="sk-cp-xxxxxxxxxxxxxxxx"
+                      className="w-full px-4 py-3 rounded-xl text-sm"
+                      style={{ 
+                        background: 'rgba(0,0,0,0.3)',
+                        border: '1px solid rgba(34,197,94,0.3)',
+                        color: '#fff',
+                        outline: 'none',
+                      }}
+                    />
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <div 
+                          className="w-2 h-2 rounded-full"
+                          style={{ 
+                            background: !aiConfig.apiKey ? '#888' : 
+                              testStatus === 'success' ? '#22c55e' : 
+                              testStatus === 'error' ? '#ef4444' : '#f59e0b'
+                          }}
+                        />
+                        <span className="text-xs" style={{ color: '#888' }}>
+                          {!aiConfig.apiKey ? '[未填写]' : 
+                           testStatus === 'success' ? '[已连接]' :
+                           testStatus === 'error' ? '[连接失败]' : '[待测试]'}
+                        </span>
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={async () => {
+                            if (!aiConfig.apiKey) {
+                              alert('请先填写 API Key');
+                              return;
+                            }
+                            setTestStatus('testing');
+                            setConnectionLog(['开始测试 MiniMax 连接...']);
+                            try {
+                              // 简单的连接测试 - 调用模型列表接口
+                              const start = Date.now();
+                              const response = await fetch('https://api.minimax.chat/v1/models', {
+                                headers: {
+                                  'Authorization': `Bearer ${aiConfig.apiKey}`,
+                                },
+                              });
+                              const latency = Date.now() - start;
+                              
+                              if (response.ok || response.status === 401) {
+                                // 401 说明 Key 有效但可能权限不足
+                                setTestStatus('success');
+                                setTestLatency(latency);
+                                setConnectionLog([`✅ 连接成功 (${latency}ms)`, `状态码: ${response.status}`]);
+                              } else {
+                                setTestStatus('error');
+                                setConnectionLog([`❌ 连接失败: HTTP ${response.status}`]);
+                              }
+                            } catch (e: any) {
+                              setTestStatus('error');
+                              setConnectionLog([`❌ 连接错误: ${e.message}`]);
+                            }
+                          }}
+                          disabled={testStatus === 'testing'}
+                          className="px-4 py-2 rounded-lg text-sm font-medium transition-all"
+                          style={{ 
+                            background: testStatus === 'testing' ? 'rgba(245,158,11,0.3)' : 'rgba(34,197,94,0.2)',
+                            color: '#22c55e',
+                            border: '1px solid rgba(34,197,94,0.3)',
+                          }}
+                        >
+                          {testStatus === 'testing' ? '测试中...' : '测试连接'}
+                        </button>
+                      </div>
+                    </div>
+                    {connectionLog.length > 0 && (
+                      <div 
+                        className="mt-3 p-3 rounded-lg text-xs"
+                        style={{ background: 'rgba(0,0,0,0.3)', fontFamily: 'monospace' }}
+                      >
+                        {connectionLog.map((log, i) => (
+                          <div key={i} style={{ color: log.includes('✅') ? '#22c55e' : log.includes('❌') ? '#ef4444' : '#888' }}>
+                            {log}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
 
               {/* 搜索结果数量 */}
               <div

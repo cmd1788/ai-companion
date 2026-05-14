@@ -1,6 +1,6 @@
 // Tauri Adapter - 真实 Tauri Runtime 实现
 import { invoke } from '@tauri-apps/api/core';
-import type { InvokeResult } from './runtimeTypes';
+import type { InvokeResult, NetworkSearchResponse } from './runtimeTypes';
 
 export async function invokeSafe<T = any>(command: string, args?: Record<string, any>): Promise<InvokeResult<T>> {
   try {
@@ -57,21 +57,61 @@ export async function writeBinaryFile(path: string, data: number[]): Promise<Inv
   return invokeSafe<void>('write_binary_file', { path, data });
 }
 
-// ========== Network Commands (预留) ==========
+// ========== Network Commands - Tauri 真实实现 ==========
 
-export async function webSearch(query: string, maxResults: number = 5): Promise<InvokeResult<any>> {
-  // 预留 Rust web_search command
-  // 如果 Rust 端未实现，返回 BLOCKED 状态
-  return {
-    ok: false,
-    error: 'BLOCKED_REAL_WEB_SEARCH: Rust web_search command not implemented',
-    command: 'web_search',
-    degraded: true,
-  };
+interface RustSearchResult {
+  ok: boolean;
+  results: Array<{title: string; url: string; snippet: string}>;
+  source: string;
+  error?: string;
+}
+
+export async function webSearch(query: string, apiKey?: string): Promise<InvokeResult<NetworkSearchResponse>> {
+  try {
+    const result = await invokeSafe<RustSearchResult>('web_search', { query, apiKey: apiKey || null });
+
+    if (!result.ok || !result.data) {
+      return {
+        ok: false,
+        error: result.error || 'Search failed',
+        command: 'web_search',
+        degraded: true,
+      };
+    }
+
+    const data = result.data;
+    if (!data.ok) {
+      return {
+        ok: false,
+        error: data.error || 'Search API error',
+        command: 'web_search',
+        degraded: true,
+      };
+    }
+
+    return {
+      ok: true,
+      data: {
+        query,
+        results: data.results,
+        source: data.source as any,
+        timestamp: Date.now(),
+        summary: `找到 ${data.results.length} 条相关结果`,
+      },
+      command: 'web_search',
+    };
+  } catch (e: any) {
+    const errorMsg = e?.message || String(e) || 'Unknown error';
+    return {
+      ok: false,
+      error: errorMsg,
+      command: 'web_search',
+      degraded: true,
+    };
+  }
 }
 
 export async function fetchUrl(url: string): Promise<InvokeResult<any>> {
-  // 预留 Rust fetch_url command
   return {
     ok: false,
     error: 'BLOCKED: Rust fetch_url command not implemented',
@@ -93,7 +133,6 @@ export const tauriAdapter = {
   captureScreen,
   readFileBase64,
   writeBinaryFile,
-  // 网络命令（预留）
   webSearch,
   fetchUrl,
 };

@@ -90,6 +90,65 @@ export async function searchMock(query: string, _provider: NetworkProvider, maxR
   };
 }
 
+// ========== MiniMax MCP Search Implementation ==========
+
+// 直接导入 mcpService 的 webSearch 函数
+// 注意：这里导入的是 Browser 版本的 webSearch，它会尝试调用 MiniMax REST API
+
+export async function searchMiniMaxMCP(query: string, _provider: NetworkProvider, maxResults: number = 5): Promise<NetworkSearchResponse> {
+  const startTime = Date.now();
+  
+  try {
+    // 动态导入 mcpService 避免循环依赖
+    const { webSearch } = await import('../mcpService');
+    
+    const result = await webSearch(query);
+    const duration = Date.now() - startTime;
+    
+    if (result.success && result.results) {
+      const results = result.results.slice(0, maxResults);
+      networkLog.add(query, 'minimax_mcp', results.length, true, undefined, duration);
+      
+      return {
+        ok: true,
+        query,
+        results,
+        source: 'minimax_mcp',
+        timestamp: Date.now(),
+        summary: `找到 ${results.length} 条相关结果（MiniMax MCP）`,
+      };
+    } else {
+      const errorMsg = result.error || 'Unknown error';
+      networkLog.add(query, 'minimax_mcp', 0, false, errorMsg, duration);
+      
+      return {
+        ok: false,
+        query,
+        results: [],
+        error: errorMsg,
+        source: 'minimax_mcp',
+        timestamp: Date.now(),
+        degraded: true,
+      };
+    }
+  } catch (error: any) {
+    const duration = Date.now() - startTime;
+    const errorMsg = error.message || 'Unknown error';
+    
+    networkLog.add(query, 'minimax_mcp', 0, false, errorMsg, duration);
+    
+    return {
+      ok: false,
+      query,
+      results: [],
+      error: errorMsg,
+      source: 'minimax_mcp',
+      timestamp: Date.now(),
+      degraded: true,
+    };
+  }
+}
+
 // Browser fetch 搜索（可能受 CORS 限制）
 export async function searchFetch(query: string, _provider: NetworkProvider, maxResults: number = 5): Promise<NetworkSearchResponse> {
   const startTime = Date.now();
@@ -159,5 +218,6 @@ export const browserAdapter = {
   network: {
     search: searchMock,
     searchFetch,
+    searchMiniMaxMCP,
   },
 };

@@ -298,12 +298,15 @@ async function networkSearch(
   }
   
   // Browser/Test 模式
-  if (provider === 'mock' || provider === 'fetch') {
+  if (provider === 'mock' || provider === 'fetch' || provider === 'minimax_mcp') {
     try {
       let response: NetworkSearchResponse;
       
       if (provider === 'mock') {
         response = await browserAdapter.network.search(query, provider, maxResults);
+      } else if (provider === 'minimax_mcp') {
+        // MiniMax MCP 搜索 - 优先真实调用
+        response = await browserAdapter.network.searchMiniMaxMCP(query, provider, maxResults);
       } else {
         // fetch 模式，可能 CORS 失败
         response = await browserAdapter.network.searchFetch(query, provider, maxResults);
