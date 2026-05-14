@@ -7,6 +7,8 @@ import { browserAdapter } from './browserAdapter';
 import { mcpBridge } from './mcpBridge';
 import { storageAdapter } from './storageAdapter';
 import { networkLog } from './networkLog';
+import { apiRuntime } from './api';
+import { agentRuntime } from './agent';
 
 // Runtime 状态
 let runtimeStatus: RuntimeStatus = {
@@ -298,19 +300,61 @@ async function networkSearch(
     console.warn(`[Runtime.network] Tauri webSearch failed: ${result.error}, falling back to browser`);
   }
   
-  // Browser/Test 模式
-  if (provider === 'mock' || provider === 'fetch' || provider === 'minimax_mcp' || provider === 'minimax_mcp_bridge') {
+  // Browser/Test 模式 - 根据 provider 路由到不同 Runtime
+  if (provider === 'mock' || provider === 'fetch' || provider === 'minimax_agent' || provider === 'github_api') {
     try {
       let response: NetworkSearchResponse;
       
       if (provider === 'mock') {
         response = await browserAdapter.network.search(query, provider, maxResults);
+      } else if (provider === 'github_api') {
+        // GitHub API Runtime
+        const result = await apiRuntime.github.searchRepos(query);
+        if (result.ok && result.data) {
+          response = {
+            query,
+            results: result.data.items.slice(0, maxResults).map((repo: any) => ({
+              title: repo.full_name,
+              url: repo.html_url,
+              snippet: repo.description || '',
+              source: 'github_api',
+            })),
+            source: 'github_api',
+            timestamp: Date.now(),
+          };
+        } else {
+          response = {
+            query,
+            results: [],
+            error: result.error || 'GitHub search failed',
+            source: 'github_api',
+            timestamp: Date.now(),
+            degraded: true,
+          };
+        }
+      } else if (provider === 'minimax_agent') {
+        // MiniMax Agent Runtime
+        const result = await agentRuntime.minimax.search(query, { maxResults });
+        if (result.ok && result.data) {
+          response = {
+            query,
+            results: result.data.results || [],
+            source: 'minimax_agent',
+            timestamp: Date.now(),
+          };
+        } else {
+          response = {
+            query,
+            results: [],
+            error: result.error || 'MiniMax search failed',
+            source: 'minimax_agent',
+            timestamp: Date.now(),
+            degraded: true,
+          };
+        }
       } else if (provider === 'minimax_mcp_bridge') {
         // MiniMax MCP Bridge - 通过 Hermes/OpenClaw Gateway
         response = await mcpBridge.search(query, { maxResults });
-      } else if (provider === 'minimax_mcp') {
-        // MiniMax MCP 直接模式
-        response = await browserAdapter.network.searchMiniMaxMCP(query, provider, maxResults);
       } else {
         // fetch 模式，可能 CORS 失败
         response = await browserAdapter.network.searchFetch(query, provider, maxResults);
@@ -377,7 +421,19 @@ const networkAPI = {
   clearLogs: clearNetworkLogs,
   exportLogs: exportNetworkLogs,
   shouldTrigger: networkLog.shouldTriggerWebSearch,
-  // MCP Bridge 额外函数
+  
+  // API Runtime - GitHub
+  testGitHubApi: apiRuntime.github.getUser,
+  githubApiLogs: apiRuntime.github.getLogs,
+  clearGitHubApiLogs: apiRuntime.github.clearLogs,
+  isGitHubConfigured: apiRuntime.github.isConfigured,
+  
+  // Agent Runtime - MiniMax
+  testMinimaxAgent: agentRuntime.minimax.testBridge,
+  minimaxAgentLogs: agentRuntime.minimax.getLogs,
+  clearMinimaxAgentLogs: agentRuntime.minimax.clearLogs,
+  
+  // MCP Bridge (legacy)
   testBridge: mcpBridge.test,
   getBridgeStatus: mcpBridge.getStatus,
   blockBridge: mcpBridge.block,
