@@ -1,0 +1,55 @@
+{
+  "timestamp": "2026-05-14T09:09:07.552Z",
+  "tests": [
+    {
+      "name": "Initial State",
+      "passed": true,
+      "data": {
+        "initialExprImg": {
+          "src": "http://localhost:5173/expressions/01_happy.webp",
+          "alt": "表情: 01_happy"
+        }
+      }
+    },
+    {
+      "name": "After \"我今天特别开心\"",
+      "passed": true,
+      "data": {
+        "afterHappyExprImg": {
+          "src": "http://localhost:5173/expressions/01_happy.webp",
+          "alt": "表情: 01_happy"
+        }
+      }
+    },
+    {
+      "name": "After \"我好难过\"",
+      "passed": true,
+      "data": {
+        "afterSadExprImg": {
+          "src": "http://localhost:5173/expressions/02_angry.webp",
+          "alt": "表情: 02_angry"
+        }
+      }
+    },
+    {
+      "name": "Auto Reply Toggle Exists",
+      "passed": true,
+      "data": {
+        "found": true
+      }
+    },
+    {
+      "name": "Store State",
+      "passed": false,
+      "data": null
+    },
+    {
+      "name": "Proactive Chat Logic Check",
+      "passed": false,
+      "data": {
+        "hasProactiveInterval": false,
+        "windowKeys": []
+      }
+    }
+  ]
+}

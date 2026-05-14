@@ -1,0 +1,15 @@
+{
+  "timestamp": "2026-05-14T10:44:04.952Z",
+  "test": "200条消息长时间测试",
+  "url": "http://localhost:4173",
+  "total": 200,
+  "success": 200,
+  "errors": 0,
+  "successRate": "100.0%",
+  "duration": "304秒",
+  "rate": "39.5条/分钟",
+  "tauriErrors": 0,
+  "totalErrors": 0,
+  "localStorageMessages": 51,
+  "errorList": []
+}

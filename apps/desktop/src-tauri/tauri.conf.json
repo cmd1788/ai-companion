@@ -6,7 +6,7 @@
   "build": {
     "beforeDevCommand": "pnpm dev",
     "beforeBuildCommand": "pnpm build",
-    "devUrl": "http://localhost:1420",
+    "devUrl": "http://localhost:5173",
     "frontendDist": "../dist"
   },
   "app": {
@@ -21,7 +21,8 @@
         "resizable": true,
         "decorations": true,
         "center": true,
-        "backgroundColor": "#1a1a2e"
+        "backgroundColor": "#1a1a2e",
+        "devtools": true
       }
     ],
     "security": {

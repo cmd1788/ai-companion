@@ -5,7 +5,7 @@ interface SettingsPanelProps {
   onClose?: () => void;
 }
 
-type SettingsTab = 'character' | 'memory' | 'system' | 'model' | 'style';
+type SettingsTab = 'character' | 'memory' | 'system' | 'model' | 'network' | 'style';
 
 export function SettingsPanel({ onClose }: SettingsPanelProps) {
   const [activeTab, setActiveTab] = useState<SettingsTab>('character');
@@ -20,6 +20,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
     styleSettings, setStyleSettings,
     character, setCharacter,
     photoPath, setPhotoPath,
+    networkSettings, setNetworkSettings,
   } = useAppStore();
 
   // 性格选项
@@ -61,6 +62,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
     { key: 'memory' as const, label: '🧠 记忆系统', icon: '🧠', color: '#a855f7', desc: '记忆保存天数、清理策略' },
     { key: 'system' as const, label: '⚙️ 系统设定', icon: '⚙️', color: '#3b82f6', desc: '截屏观察、主动回复' },
     { key: 'model' as const, label: '🤖 模型设置', icon: '🤖', color: '#22c55e', desc: 'API配置、连接测试' },
+    { key: 'network' as const, label: '🌐 联网设置', icon: '🌐', color: '#06b6d4', desc: '联网搜索、日志、供应商' },
     { key: 'style' as const, label: '🎨 风格页面', icon: '🎨', color: '#f59e0b', desc: '界面显示、功能开关' },
   ];
 
@@ -781,6 +783,173 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
                     ))}
                   </div>
                 )}
+              </div>
+            </div>
+          )}
+
+          {/* ========== 联网设置 ========== */}
+          {activeTab === 'network' && (
+            <div className="max-w-3xl space-y-8">
+              {/* 联网总开关 */}
+              <div
+                className="p-6 rounded-2xl"
+                style={{ background: 'rgba(6,182,212,0.08)', border: '1px solid rgba(6,182,212,0.2)' }}
+              >
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2">
+                    <span className="text-lg">🌐</span>
+                    <h3 className="text-base font-semibold" style={{ color: '#06b6d4' }}>联网搜索</h3>
+                  </div>
+                  <button
+                    onClick={() => setNetworkSettings({ ...networkSettings, enableWebSearch: !networkSettings.enableWebSearch })}
+                    className={`w-12 h-6 rounded-full transition-colors ${networkSettings.enableWebSearch ? 'bg-cyan-500' : 'bg-gray-600'}`}
+                  >
+                    <div className={`w-5 h-5 rounded-full bg-white shadow transition-transform ${networkSettings.enableWebSearch ? 'translate-x-6' : 'translate-x-0.5'}`} />
+                  </button>
+                </div>
+                <p className="text-xs" style={{ color: '#888' }}>
+                  开启后，当消息包含特定关键词时会自动触发联网搜索
+                </p>
+              </div>
+
+              {/* 联网供应商 */}
+              <div
+                className="p-6 rounded-2xl"
+                style={{ background: 'rgba(6,182,212,0.08)', border: '1px solid rgba(6,182,212,0.2)' }}
+              >
+                <div className="flex items-center gap-2 mb-4">
+                  <span className="text-lg">📡</span>
+                  <h3 className="text-base font-semibold" style={{ color: '#06b6d4' }}>联网供应商</h3>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  {[
+                    { value: 'mock', label: '🔮 Mock', desc: '测试模式，返回模拟数据', color: '#a855f7' },
+                    { value: 'minimax', label: '🤖 MiniMax', desc: '使用 MiniMax API 联网', color: '#22c55e' },
+                    { value: 'fetch', label: '🌍 Browser', desc: '浏览器直接请求(可能CORS)', color: '#3b82f6' },
+                    { value: 'disabled', label: '❌ 禁用', desc: '关闭所有联网功能', color: '#ef4444' },
+                  ].map(item => (
+                    <button
+                      key={item.value}
+                      onClick={() => setNetworkSettings({ ...networkSettings, provider: item.value as any })}
+                      className={`p-4 rounded-xl text-left transition-all ${networkSettings.provider === item.value ? 'ring-2' : 'opacity-60 hover:opacity-100'}`}
+                      style={{ 
+                        background: networkSettings.provider === item.value ? `${item.color}20` : 'rgba(255,255,255,0.05)',
+                        borderColor: networkSettings.provider === item.value ? item.color : 'transparent',
+                        ringColor: item.color,
+                      }}
+                    >
+                      <div className="font-medium" style={{ color: item.color }}>{item.label}</div>
+                      <div className="text-xs mt-1" style={{ color: '#888' }}>{item.desc}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* 搜索结果数量 */}
+              <div
+                className="p-6 rounded-2xl"
+                style={{ background: 'rgba(6,182,212,0.08)', border: '1px solid rgba(6,182,212,0.2)' }}
+              >
+                <div className="flex items-center gap-2 mb-4">
+                  <span className="text-lg">📊</span>
+                  <h3 className="text-base font-semibold" style={{ color: '#06b6d4' }}>搜索结果数量</h3>
+                </div>
+                <div className="flex gap-3">
+                  {[3, 5, 8, 10].map(num => (
+                    <button
+                      key={num}
+                      onClick={() => setNetworkSettings({ ...networkSettings, maxResults: num })}
+                      className={`px-4 py-2 rounded-lg transition-all ${networkSettings.maxResults === num ? 'ring-2' : 'opacity-60 hover:opacity-100'}`}
+                      style={{ 
+                        background: networkSettings.maxResults === num ? 'rgba(6,182,212,0.3)' : 'rgba(255,255,255,0.05)',
+                        borderColor: '#06b6d4',
+                        color: networkSettings.maxResults === num ? '#06b6d4' : '#888',
+                      }}
+                    >
+                      {num} 条
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* 自动总结 */}
+              <div
+                className="p-6 rounded-2xl"
+                style={{ background: 'rgba(6,182,212,0.08)', border: '1px solid rgba(6,182,212,0.2)' }}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-lg">📝</span>
+                    <div>
+                      <h3 className="text-base font-semibold" style={{ color: '#06b6d4' }}>自动总结网页</h3>
+                      <p className="text-xs mt-0.5" style={{ color: '#888' }}>联网后自动生成内容摘要</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setNetworkSettings({ ...networkSettings, autoSummarize: !networkSettings.autoSummarize })}
+                    className={`w-12 h-6 rounded-full transition-colors ${networkSettings.autoSummarize ? 'bg-cyan-500' : 'bg-gray-600'}`}
+                  >
+                    <div className={`w-5 h-5 rounded-full bg-white shadow transition-transform ${networkSettings.autoSummarize ? 'translate-x-6' : 'translate-x-0.5'}`} />
+                  </button>
+                </div>
+              </div>
+
+              {/* 网络日志 */}
+              <div
+                className="p-6 rounded-2xl"
+                style={{ background: 'rgba(6,182,212,0.08)', border: '1px solid rgba(6,182,212,0.2)' }}
+              >
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2">
+                    <span className="text-lg">📋</span>
+                    <div>
+                      <h3 className="text-base font-semibold" style={{ color: '#06b6d4' }}>网络请求日志</h3>
+                      <p className="text-xs mt-0.5" style={{ color: '#888' }}>记录所有联网请求到 localStorage</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setNetworkSettings({ ...networkSettings, enableNetworkLogs: !networkSettings.enableNetworkLogs })}
+                    className={`w-12 h-6 rounded-full transition-colors ${networkSettings.enableNetworkLogs ? 'bg-cyan-500' : 'bg-gray-600'}`}
+                  >
+                    <div className={`w-5 h-5 rounded-full bg-white shadow transition-transform ${networkSettings.enableNetworkLogs ? 'translate-x-6' : 'translate-x-0.5'}`} />
+                  </button>
+                </div>
+                <button
+                  onClick={() => {
+                    localStorage.removeItem('ai_companion_network_logs');
+                    alert('日志已清除');
+                  }}
+                  className="px-4 py-2 rounded-lg text-sm transition-all hover:opacity-80"
+                  style={{ background: 'rgba(239,68,68,0.2)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)' }}
+                >
+                  🗑️ 清除日志
+                </button>
+              </div>
+
+              {/* 测试联网 */}
+              <div
+                className="p-6 rounded-2xl"
+                style={{ background: 'rgba(6,182,212,0.08)', border: '1px solid rgba(6,182,212,0.2)' }}
+              >
+                <div className="flex items-center gap-2 mb-4">
+                  <span className="text-lg">🧪</span>
+                  <h3 className="text-base font-semibold" style={{ color: '#06b6d4' }}>测试联网</h3>
+                </div>
+                <button
+                  onClick={async () => {
+                    try {
+                      const { runtime } = await import('./runtime/runtimeAdapter');
+                      const result = await runtime.network.search('AI最新新闻', { provider: networkSettings.provider });
+                      alert(`联网测试${result.ok ? '成功' : '失败'}!\n结果数: ${result.results?.length || 0}\n来源: ${result.source}${result.error ? '\n错误: ' + result.error : ''}`);
+                    } catch (e: any) {
+                      alert('联网测试异常: ' + e.message);
+                    }
+                  }}
+                  className="px-6 py-3 rounded-xl font-medium transition-all hover:opacity-80"
+                  style={{ background: 'linear-gradient(135deg, #06b6d4, #0891b2)', color: 'white' }}
+                >
+                  🔍 测试搜索 "AI最新新闻"
+                </button>
               </div>
             </div>
           )}

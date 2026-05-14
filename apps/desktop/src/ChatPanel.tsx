@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useAppStore } from './store';
 import { analyzeScreen, generateImage, textToSpeech } from './mcpService';
 import { onUserMessage } from './proactiveChat';
+import { runtime } from './runtime/runtimeAdapter';
 
 const API_BASE = 'https://api.minimax.chat';
 const MODEL = 'MiniMax-M2.7-highspeed';
@@ -96,7 +97,7 @@ export function ChatPanel() {
   const [isLoading, setIsLoading] = useState(false);
   const [isAITyping, setIsAITyping] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const { aiConfig, messages, addMessage, updateEmotionFromChat, memories, setCurrentExpression } = useAppStore();
+  const { aiConfig, messages, addMessage, updateEmotionFromChat, memories, setCurrentExpression, networkSettings } = useAppStore();
   const msgCount = messages.length;
 
   const scrollToBottom = () => {
@@ -108,7 +109,7 @@ export function ChatPanel() {
   }, [messages]);
 
   // 构建带记忆的系统提示
-  const buildSystemPrompt = () => {
+  const buildSystemPrompt = (networkContext?: {query: string; results: string}) => {
     const { characterSettings, memories } = useAppStore.getState();
     const personalities = characterSettings.personality.join('、');
     let prompt = `你是${characterSettings.name}，一个${personalities}的AI少女。你用~呀啦哦呢嘿等语气词结尾。不要太长，保持活泼俏皮的风格。
@@ -120,9 +121,12 @@ export function ChatPanel() {
 
 当用户要求看图、生成图片时，使用generateImage。
 当你想看屏幕上有什么时，使用analyzeScreen。
-当你想说话时，使用textToSpeech。
+当你想说话时，使用textToSpeech。`;
 
-每次回复可以根据情况调用1-2个工具，但不要过度使用。`;
+    // 如果有联网搜索结果，添加到系统提示
+    if (networkContext) {
+      prompt += `\n\n【联网搜索信息】用户搜索了"${networkContext.query}"，以下是搜索结果：\n${networkContext.results}\n请根据这些搜索结果回答用户的问题。`;
+    }
 
     if (memories.length > 0) {
       const memoryTexts = memories.slice(0, 5).map(m => m.content).join('；');
@@ -133,7 +137,7 @@ export function ChatPanel() {
   };
 
   // 带工具调用的API调用
-  const callMiniMax = async (userMessage: string): Promise<string> => {
+  const callMiniMax = async (userMessage: string, networkContext?: {query: string; results: string}): Promise<string> => {
     const apiKey = aiConfig.apiKey || '';
     if (!apiKey) {
       throw new Error('请先在设置中配置MiniMax API Key');
@@ -155,7 +159,7 @@ export function ChatPanel() {
         messages: [
           {
             role: 'system',
-            content: buildSystemPrompt()
+            content: buildSystemPrompt(networkContext)
           },
           ...conversationHistory,
           { role: 'user', content: userMessage }
@@ -215,7 +219,7 @@ export function ChatPanel() {
           messages: [
             {
               role: 'system',
-              content: buildSystemPrompt()
+              content: buildSystemPrompt(networkContext)
             },
             ...conversationHistory,
             { role: 'user', content: userMessage },
@@ -244,12 +248,61 @@ export function ChatPanel() {
     setInput('');
     // 记录用户发消息时间，用于主动聊天冷却
     onUserMessage();
+    
+    // 从 store 获取最新的 networkSettings
+    const currentNetworkSettings = useAppStore.getState().networkSettings;
+    
+    // 检查是否需要联网搜索
+    let networkContext: {query: string; results: string} | undefined;
+    let networkSearchData: {query: string; resultCount: number; source: string} | null = null;
+    
+    if (currentNetworkSettings.enableWebSearch && runtime.network?.shouldTrigger(userMessage)) {
+      console.log('[ChatPanel] Web search triggered for:', userMessage);
+      
+      const searchResult = await runtime.network.search(userMessage, {
+        provider: currentNetworkSettings.provider,
+        maxResults: currentNetworkSettings.maxResults,
+      });
+      
+      console.log('[ChatPanel] Search result:', searchResult);
+      
+      if (searchResult.ok && searchResult.results && searchResult.results.length > 0) {
+        // 格式化搜索结果
+        const formattedResults = searchResult.results.map((r: any, i: number) => 
+          `${i + 1}. ${r.title}\n   ${r.url}\n   ${r.snippet}`
+        ).join('\n\n');
+        
+        networkContext = {
+          query: searchResult.query,
+          results: formattedResults,
+        };
+        
+        networkSearchData = {
+          query: searchResult.query,
+          resultCount: searchResult.results.length,
+          source: searchResult.source,
+        };
+        
+        console.log('[ChatPanel] Network context prepared, results:', searchResult.results.length);
+      }
+    }
+    
+    // 先添加用户消息
     await addMessage({ role: 'user', content: userMessage });
+    
+    // 如果有联网搜索标识，立即显示
+    if (networkSearchData) {
+      await addMessage({ 
+        role: 'system', 
+        content: `🌐 已联网搜索：${networkSearchData.query} (${networkSearchData.resultCount}条结果，来自${networkSearchData.source})`
+      });
+    }
+    
     setIsLoading(true);
     setIsAITyping(true);
 
     try {
-      const reply = await callMiniMax(userMessage);
+      const reply = await callMiniMax(userMessage, networkContext);
       addMessage({ role: 'assistant', content: reply });
       
       // 更新情绪和记忆
@@ -279,24 +332,44 @@ export function ChatPanel() {
           </div>
         )}
         
-        {messages.map((msg, index) => (
-          <div
-            key={index}
-            className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
-          >
+        {messages.map((msg, index) => {
+          // system 消息（联网搜索标识）用特殊样式显示
+          if (msg.role === 'system') {
+            return (
+              <div key={index} className="flex justify-start">
+                <div
+                  className="max-w-[80%] px-3 py-2 rounded-lg text-xs"
+                  style={{
+                    background: 'rgba(6,182,212,0.15)',
+                    color: '#06b6d4',
+                    border: '1px solid rgba(6,182,212,0.3)',
+                  }}
+                >
+                  {msg.content}
+                </div>
+              </div>
+            );
+          }
+          
+          return (
             <div
-              className="max-w-[80%] px-3 py-2 rounded-lg text-sm"
-              style={{
-                background: msg.role === 'user' 
-                  ? 'linear-gradient(135deg, #e94560, #ff6b6b)' 
-                  : 'rgba(255, 255, 255, 0.1)',
-                color: msg.role === 'user' ? '#fff' : '#eaeaea',
-              }}
+              key={index}
+              className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
             >
-              {msg.content}
+              <div
+                className="max-w-[80%] px-3 py-2 rounded-lg text-sm"
+                style={{
+                  background: msg.role === 'user' 
+                    ? 'linear-gradient(135deg, #e94560, #ff6b6b)' 
+                    : 'rgba(255, 255, 255, 0.1)',
+                  color: msg.role === 'user' ? '#fff' : '#eaeaea',
+                }}
+              >
+                {msg.content}
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
         
         {isLoading && (
           <div className="flex justify-start">

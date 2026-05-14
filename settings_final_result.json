@@ -1,0 +1,20 @@
+{
+  "timestamp": "2026-05-14T10:37:50.725Z",
+  "status": "PASS",
+  "tabs": [
+    "👤 人物设定",
+    "🧠 记忆系统",
+    "⚙️ 系统设定",
+    "🤖 模型设置",
+    "🎨 风格页面"
+  ],
+  "screenshots": [
+    "settings_01_overview.png",
+    "settings_02_memory.png",
+    "settings_03_system.png",
+    "settings_04_model.png",
+    "settings_05_style.png"
+  ],
+  "tauriErrors": 0,
+  "totalErrors": 0
+}

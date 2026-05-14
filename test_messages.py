@@ -5,7 +5,7 @@ import time
 import json
 from datetime import datetime
 
-API_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9'
+API_KEY = 'sk-cp-eZ_KsU3aRH1rcNGPfFlBdIyFqLt4wfIZm9LgQ8dyHJEjUFXBwfqGjbK9Ne7sBIVGpoiR6okgH-SDRbSelgVtsNTaT3wUkTY5ox8TS-EWyRaDFc9a_uj1TKY'
 BASE_URL = 'https://api.minimax.chat/v1/text/chatcompletion_v2'
 MODEL = 'MiniMax-M2.7-highspeed'
 

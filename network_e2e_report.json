@@ -1,0 +1,70 @@
+{
+  "timestamp": "2026-05-14T11:25:29.204Z",
+  "summary": {
+    "steps": 16,
+    "passed": 15,
+    "failed": 0
+  },
+  "steps": [
+    "1. 打开应用",
+    "2. 打开设置页面",
+    "3. 找到联网设置 Tab",
+    "4. 开启联网搜索",
+    "5. 设置 provider 为 mock",
+    "6. 关闭设置，回到聊天区",
+    "7. 输入联网搜索消息",
+    "8. 点击发送按钮",
+    "9. 验证 runtime.network.search 被调用",
+    "10. 验证聊天区出现\"已联网搜索\"标识",
+    "11. 验证 mock 搜索结果显示",
+    "12. 验证 localStorage 中存在网络日志",
+    "13. 关闭联网搜索",
+    "14. 输入普通消息（不应触发联网）",
+    "15. 发送消息并验证不触发联网",
+    "16. 验证关闭联网后不再触发搜索"
+  ],
+  "passedTests": [
+    "应用已打开",
+    "设置页面已打开",
+    "联网设置 Tab 已点击",
+    "联网开关已点击",
+    "Provider 已设置为 mock",
+    "设置已关闭",
+    "已输入: 搜索AI最新消息",
+    "发送按钮已点击",
+    "runtime.network.search 调用验证 (hasLog: false)",
+    "聊天区显示\"已联网搜索\"标识",
+    "聊天消息数量: 4",
+    "网络日志已写入 localStorage，共 1 条",
+    "联网搜索已关闭",
+    "已输入: 搜索天气",
+    "最终日志数量: 1"
+  ],
+  "failedTests": [],
+  "screenshots": [
+    "C:/Users/asus/ai-companion/network_e2e_01_app_opened_1778757921327.png",
+    "C:/Users/asus/ai-companion/network_e2e_02_settings_opened_1778757921760.png",
+    "C:/Users/asus/ai-companion/network_e2e_03_network_tab_1778757922293.png",
+    "C:/Users/asus/ai-companion/network_e2e_04_websearch_enabled_1778757922709.png",
+    "C:/Users/asus/ai-companion/network_e2e_05_provider_mock_1778757923127.png",
+    "C:/Users/asus/ai-companion/network_e2e_06_back_to_chat_1778757923644.png",
+    "C:/Users/asus/ai-companion/network_e2e_07_message_typed_1778757923860.png",
+    "C:/Users/asus/ai-companion/network_e2e_08_send_clicked_1778757923897.png",
+    "C:/Users/asus/ai-companion/network_e2e_10_network_indicator_1778757926412.png",
+    "C:/Users/asus/ai-companion/network_e2e_11_chat_messages_1778757926413.png",
+    "C:/Users/asus/ai-companion/network_e2e_13_websearch_disabled_1778757927545.png",
+    "C:/Users/asus/ai-companion/network_e2e_15_no_network_triggered_1778757929193.png"
+  ],
+  "consoleErrors": 0,
+  "networkLogs": [
+    {
+      "id": "net_1778757924661_8qt2li5",
+      "query": "搜索AI最新消息",
+      "provider": "mock",
+      "resultCount": 2,
+      "ok": true,
+      "timestamp": 1778757924661,
+      "duration": 764
+    }
+  ]
+}

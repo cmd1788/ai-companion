@@ -56,6 +56,15 @@ interface CharacterSettings {
   customDescription?: string;    // 自定义角色描述
 }
 
+// 联网设置接口
+interface NetworkSettings {
+  enableWebSearch: boolean;     // 开启联网搜索
+  provider: 'minimax' | 'fetch' | 'mock' | 'disabled';  // 联网供应商
+  maxResults: number;           // 搜索结果数量
+  autoSummarize: boolean;       // 自动总结网页
+  enableNetworkLogs: boolean;   // 网络请求日志开关
+}
+
 interface AppState {
   dbReady: boolean;
   character: CharacterProfile;
@@ -72,10 +81,12 @@ interface AppState {
   styleSettings: StyleSettings;
   systemSettings: SystemSettings;
   characterSettings: CharacterSettings;
+  networkSettings: NetworkSettings;  // 联网设置
   // 新增设置方法
   setStyleSettings: (settings: StyleSettings) => void;
   setSystemSettings: (settings: SystemSettings) => void;
   setCharacterSettings: (settings: CharacterSettings) => void;
+  setNetworkSettings: (settings: NetworkSettings) => void;  // 联网设置方法
   setCharacter: (character: CharacterProfile) => void;
   setCurrentExpression: (expression: string) => void;
   initDB: () => Promise<void>;
@@ -256,12 +267,22 @@ export const useAppStore = create<AppState>((set, get) => ({
     photoPath: 'E:/BaiduNetdiskDownload/2333/anon',
   },
 
+  // 联网设置默认值
+  networkSettings: {
+    enableWebSearch: false,
+    provider: 'mock',
+    maxResults: 5,
+    autoSummarize: true,
+    enableNetworkLogs: true,
+  },
+
   setPhotoPath: (photoPath) => set({ photoPath }),
 
   // 新增设置方法
   setStyleSettings: (styleSettings) => set({ styleSettings }),
   setSystemSettings: (systemSettings) => set({ systemSettings }),
   setCharacterSettings: (characterSettings) => set({ characterSettings }),
+  setNetworkSettings: (networkSettings) => set({ networkSettings }),
   setCharacter: (character) => set({ character }),
   setCurrentExpression: (expression) => set({ currentExpression: expression }),
 

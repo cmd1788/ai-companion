@@ -1,10 +1,11 @@
 // Runtime Adapter - 统一 Runtime API
 // 自动检测运行环境，选择 Tauri 或 Browser 实现
 
-import type { RuntimeMode, RuntimeStatus, Message, MemoryItem, EmotionState, RuntimeStateExport, InvokeResult } from './runtimeTypes';
+import type { RuntimeMode, RuntimeStatus, Message, MemoryItem, EmotionState, RuntimeStateExport, InvokeResult, NetworkProvider, NetworkSearchResponse, NetworkStatus } from './runtimeTypes';
 import { tauriAdapter } from './tauriAdapter';
 import { browserAdapter } from './browserAdapter';
 import { storageAdapter } from './storageAdapter';
+import { networkLog } from './networkLog';
 
 // Runtime 状态
 let runtimeStatus: RuntimeStatus = {
@@ -234,6 +235,143 @@ const diagnosticsAPI = {
   },
 };
 
+// ========== Network API ==========
+
+// 网络状态
+let networkStatus: NetworkStatus = {
+  enabled: false,
+  provider: 'disabled',
+  requestCount: 0,
+  errorCount: 0,
+  source: 'browser',
+};
+
+// 设置网络提供商
+function setNetworkProvider(provider: NetworkProvider): void {
+  networkStatus.provider = provider;
+  networkStatus.enabled = provider !== 'disabled';
+  console.log(`[Runtime] Network provider set to: ${provider}`);
+}
+
+// 搜索 API
+async function networkSearch(
+  query: string,
+  options?: { provider?: NetworkProvider; maxResults?: number }
+): Promise<NetworkSearchResponse> {
+  const provider = options?.provider || networkStatus.provider || 'mock';
+  const maxResults = options?.maxResults || 5;
+  
+  networkStatus.lastQuery = query;
+  networkStatus.requestCount++;
+  
+  console.log(`[Runtime.network] search("${query}", provider=${provider})`);
+  
+  // 如果禁用
+  if (provider === 'disabled') {
+    const response: NetworkSearchResponse = {
+      query,
+      results: [],
+      error: 'Web search is disabled',
+      source: 'browser',
+      timestamp: Date.now(),
+      degraded: true,
+    };
+    networkStatus.lastError = 'disabled';
+    return response;
+  }
+  
+  // Tauri 模式 - 尝试真实联网
+  if (isTauriRuntime() && provider !== 'mock') {
+    const result = await tauriAdapter.webSearch(query, maxResults);
+    if (result.ok && result.data) {
+      networkStatus.lastSuccessAt = Date.now();
+      networkStatus.source = 'tauri';
+      return {
+        query,
+        results: result.data.results || [],
+        source: 'tauri',
+        timestamp: Date.now(),
+      };
+    }
+    // Tauri 失败，降级到 Browser
+    console.warn(`[Runtime.network] Tauri webSearch failed: ${result.error}, falling back to browser`);
+  }
+  
+  // Browser/Test 模式
+  if (provider === 'mock' || provider === 'fetch') {
+    try {
+      let response: NetworkSearchResponse;
+      
+      if (provider === 'mock') {
+        response = await browserAdapter.network.search(query, provider, maxResults);
+      } else {
+        // fetch 模式，可能 CORS 失败
+        response = await browserAdapter.network.searchFetch(query, provider, maxResults);
+      }
+      
+      if (response.error && response.degraded) {
+        networkStatus.lastError = response.error;
+        networkStatus.errorCount++;
+      } else {
+        networkStatus.lastSuccessAt = Date.now();
+      }
+      
+      networkStatus.source = response.source;
+      return response;
+    } catch (error: any) {
+      networkStatus.errorCount++;
+      networkStatus.lastError = error.message || 'Unknown network error';
+      console.error(`[Runtime.network] Browser search failed:`, error);
+      
+      // 绝不让错误导致崩溃
+      return {
+        query,
+        results: [],
+        error: error.message || 'Network search failed',
+        source: 'browser',
+        timestamp: Date.now(),
+        degraded: true,
+      };
+    }
+  }
+  
+  // 默认返回空结果
+  return {
+    query,
+    results: [],
+    error: 'No valid network provider',
+    source: 'browser',
+    timestamp: Date.now(),
+    degraded: true,
+  };
+}
+
+// 获取网络状态
+function getNetworkStatus(): NetworkStatus {
+  return { ...networkStatus };
+}
+
+// 清除网络日志
+function clearNetworkLogs(): void {
+  networkLog.clear();
+  console.log('[Runtime.network] Logs cleared');
+}
+
+// 导出网络日志
+function exportNetworkLogs(): any[] {
+  return networkLog.export();
+}
+
+// 网络 API 对象
+const networkAPI = {
+  search: networkSearch,
+  setProvider: setNetworkProvider,
+  getStatus: getNetworkStatus,
+  clearLogs: clearNetworkLogs,
+  exportLogs: exportNetworkLogs,
+  shouldTrigger: networkLog.shouldTriggerWebSearch,
+};
+
 // 统一 Runtime 对象
 export const runtime = {
   status: runtimeStatus,
@@ -249,6 +387,9 @@ export const runtime = {
   screen: screenAPI,
   tts: ttsAPI,
   diagnostics: diagnosticsAPI,
+  
+  // 联网 API
+  network: networkAPI,
 };
 
 export default runtime;

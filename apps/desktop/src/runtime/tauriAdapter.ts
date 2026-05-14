@@ -57,6 +57,29 @@ export async function writeBinaryFile(path: string, data: number[]): Promise<Inv
   return invokeSafe<void>('write_binary_file', { path, data });
 }
 
+// ========== Network Commands (预留) ==========
+
+export async function webSearch(query: string, maxResults: number = 5): Promise<InvokeResult<any>> {
+  // 预留 Rust web_search command
+  // 如果 Rust 端未实现，返回 BLOCKED 状态
+  return {
+    ok: false,
+    error: 'BLOCKED_REAL_WEB_SEARCH: Rust web_search command not implemented',
+    command: 'web_search',
+    degraded: true,
+  };
+}
+
+export async function fetchUrl(url: string): Promise<InvokeResult<any>> {
+  // 预留 Rust fetch_url command
+  return {
+    ok: false,
+    error: 'BLOCKED: Rust fetch_url command not implemented',
+    command: 'fetch_url',
+    degraded: true,
+  };
+}
+
 export const tauriAdapter = {
   invokeSafe,
   ping,
@@ -70,4 +93,7 @@ export const tauriAdapter = {
   captureScreen,
   readFileBase64,
   writeBinaryFile,
+  // 网络命令（预留）
+  webSearch,
+  fetchUrl,
 };

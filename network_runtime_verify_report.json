@@ -1,0 +1,25 @@
+{
+  "timestamp": "2026-05-14T11:11:59.703Z",
+  "summary": {
+    "passed": 8,
+    "failed": 1,
+    "warnings": 1
+  },
+  "passedTests": [
+    "React 正常渲染，root 内容长度: 2936",
+    "联网设置 Tab 存在且可点击",
+    "联网开关可以点击",
+    "Mock 搜索返回 1 条结果",
+    "联网标识显示逻辑存在",
+    "网络日志成功写入 localStorage",
+    "关闭联网后正确阻止搜索",
+    "网络日志清除功能正常"
+  ],
+  "failedTests": [
+    "联网关键词触发逻辑有问题"
+  ],
+  "warnings": [
+    "runtime.network.search 未在 window 上暴露，尝试其他检测方式"
+  ],
+  "consoleErrors": 0
+}
