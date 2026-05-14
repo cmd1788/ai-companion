@@ -888,8 +888,8 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
                       </button>
                     </div>
                     <div className="text-xs p-3 rounded-lg" style={{ background: 'rgba(0,0,0,0.3)', color: '#888' }}>
-                      <div>网关地址: ws://localhost:8080/bridge</div>
-                      <div>HTTP: http://localhost:8080/bridge</div>
+                      <div>OpenClaw 网关: ws://localhost:18789</div>
+                      <div>HTTP: http://localhost:18789</div>
                     </div>
                   </div>
                 </div>

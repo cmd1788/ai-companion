@@ -28,10 +28,10 @@ let bridgeState: BridgeState = {
 // ========== Bridge 配置 ==========
 
 const BRIDGE_CONFIG = {
-  // Hermes Gateway WebSocket
-  wsUrl: 'ws://localhost:8080/bridge',
+  // OpenClaw Gateway WebSocket (正确端口: 18789)
+  wsUrl: 'ws://localhost:18789',
   // HTTP Fallback
-  httpUrl: 'http://localhost:8080/bridge',
+  httpUrl: 'http://localhost:18789',
   // 连接超时
   timeout: 5000,
   // 重试次数
