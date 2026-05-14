@@ -29,9 +29,9 @@ let bridgeState: BridgeState = {
 
 const BRIDGE_CONFIG = {
   // OpenClaw Gateway WebSocket (正确端口: 18789)
-  wsUrl: 'ws://localhost:18789',
+  wsUrl: 'ws://127.0.0.1:18789',
   // HTTP Fallback
-  httpUrl: 'http://localhost:18789',
+  httpUrl: 'http://127.0.0.1:18789',
   // 连接超时
   timeout: 5000,
   // 重试次数
