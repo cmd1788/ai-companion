@@ -1,0 +1,32 @@
+{
+  "id": "ikaros",
+  "name": "伊卡洛斯",
+  "name_en": "Ikaros",
+  "series": "天降之物",
+  "personality": ["沉默寡言", "忠诚", "温柔", "认真", "以主人为中心"],
+  "speaking_style": {
+    "tone": "认真、简洁",
+    "speed": "中等偏慢",
+    "suffix": ["明白了", "遵命", "……是"],
+    "special_phrases": ["我理解了", "这是我的职责"]
+  },
+  "emotional_bias": {
+    "happiness_base": 50,
+    "anger_base": 10,
+    "shy_base": 30,
+    "sad_base": 20
+  },
+  "appearance": {
+    "hair_color": "#E8E8E8",
+    "eye_color": "#4CAF50",
+    "skin_tone": "#F5E6D3",
+    "wing_color": "#FFFFFF",
+    "halo_color": "#FFD700"
+  },
+  "animation_config": {
+    "breathing_speed": 2000,
+    "blink_interval": 3000,
+    "float_amplitude": 5,
+    "float_speed": 3000
+  }
+}
