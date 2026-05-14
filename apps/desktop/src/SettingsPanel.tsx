@@ -5,12 +5,13 @@ interface SettingsPanelProps {
   onClose?: () => void;
 }
 
-type SettingsTab = 'character' | 'system' | 'model' | 'style';
+type SettingsTab = 'character' | 'memory' | 'system' | 'model' | 'style';
 
 export function SettingsPanel({ onClose }: SettingsPanelProps) {
   const [activeTab, setActiveTab] = useState<SettingsTab>('character');
   const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
   const [testLatency, setTestLatency] = useState<number | null>(null);
+  const [connectionLog, setConnectionLog] = useState<string[]>([]);
 
   const {
     aiConfig, setAIConfig,
@@ -21,18 +22,70 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
     photoPath, setPhotoPath,
   } = useAppStore();
 
+  // 性格选项
   const personalityOptions = [
     '超级可爱', '话痨', '活泼开朗', '粘人', '爱撒娇',
     '温柔体贴', '傲娇', '高冷', '沙雕', '文艺',
-    '元气满满', '文静', '腹黑', '治愈系', '搞笑'
+    '元气满满', '文静', '腹黑', '治愈系', '搞笑',
+    '高智商', '运动健将', '音乐天赋', '艺术家气质', '呆萌'
   ];
+
+  // 记忆保留时间选项
+  const memoryDaysOptions = [
+    { value: 7, label: '1周' },
+    { value: 14, label: '2周' },
+    { value: 30, label: '1个月' },
+    { value: 60, label: '2个月' },
+    { value: 90, label: '3个月' },
+  ];
+
+  // 截屏间隔选项
+  const screenIntervalOptions = [
+    { value: 10, label: '10秒' },
+    { value: 20, label: '20秒' },
+    { value: 30, label: '30秒' },
+    { value: 60, label: '1分钟' },
+    { value: 120, label: '2分钟' },
+  ];
+
+  // 主动回复速度选项
+  const replySpeedOptions = [
+    { value: 'slow', label: '🐢 慢', desc: '约5分钟一次' },
+    { value: 'normal', label: '🚶 正常', desc: '约2分钟一次' },
+    { value: 'fast', label: '🚀 快', desc: '约30秒一次' },
+  ];
+
+  // Tab 配置
+  const tabs = [
+    { key: 'character' as const, label: '👤 人物设定', icon: '👤', color: '#e94560', desc: '角色性格、外观、背景' },
+    { key: 'memory' as const, label: '🧠 记忆系统', icon: '🧠', color: '#a855f7', desc: '记忆保存天数、清理策略' },
+    { key: 'system' as const, label: '⚙️ 系统设定', icon: '⚙️', color: '#3b82f6', desc: '截屏观察、主动回复' },
+    { key: 'model' as const, label: '🤖 模型设置', icon: '🤖', color: '#22c55e', desc: 'API配置、连接测试' },
+    { key: 'style' as const, label: '🎨 风格页面', icon: '🎨', color: '#f59e0b', desc: '界面显示、功能开关' },
+  ];
+
+  const togglePersonality = (tag: string) => {
+    const current = characterSettings.personality;
+    const newPersonality = current.includes(tag)
+      ? current.filter(p => p !== tag)
+      : [...current, tag];
+    setCharacterSettings({ ...characterSettings, personality: newPersonality });
+  };
+
+  const addLog = (msg: string) => {
+    const now = new Date().toLocaleTimeString('zh-CN', { hour12: false });
+    setConnectionLog(prev => [...prev.slice(-9), `[${now}] ${msg}`]);
+  };
 
   const testApiConnection = async () => {
     setTestStatus('testing');
     setTestLatency(null);
+    setConnectionLog([]);
     const t0 = Date.now();
+    addLog(`测试连接: ${aiConfig.baseUrl}`);
 
     try {
+      addLog(`发送请求到 ${aiConfig.model}...`);
       const response = await fetch(`${aiConfig.baseUrl}/v1/text/chatcompletion_v2`, {
         method: 'POST',
         headers: {
@@ -48,489 +101,833 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
 
       const latency = Date.now() - t0;
       setTestLatency(latency);
-      setTestStatus(response.ok ? 'success' : 'error');
-    } catch {
+      addLog(`收到响应: HTTP ${response.status}`);
+      
+      if (response.ok) {
+        setTestStatus('success');
+        addLog('✅ 连接成功!');
+      } else {
+        setTestStatus('error');
+        addLog(`❌ HTTP错误: ${response.status}`);
+      }
+    } catch (err: any) {
       setTestStatus('error');
+      addLog(`❌ 连接失败: ${err.message}`);
     }
 
-    setTimeout(() => setTestStatus('idle'), 5000);
+    setTimeout(() => setTestStatus('idle'), 8000);
   };
-
-  const togglePersonality = (tag: string) => {
-    const current = characterSettings.personality;
-    const newPersonality = current.includes(tag)
-      ? current.filter(p => p !== tag)
-      : [...current, tag];
-    setCharacterSettings({ ...characterSettings, personality: newPersonality });
-  };
-
-  const tabs = [
-    { key: 'character' as const, label: '👤 人物设定', color: '#e94560' },
-    { key: 'system' as const, label: '⚙️ 系统设定', color: '#3b82f6' },
-    { key: 'model' as const, label: '🤖 模型设置', color: '#22c55e' },
-    { key: 'style' as const, label: '🎨 风格页面', color: '#f59e0b' },
-  ];
 
   return (
     <div
-      className="absolute inset-0 flex flex-col overflow-hidden"
+      className="flex h-full"
       style={{
-        background: 'linear-gradient(180deg, #1a1a2e 0%, #16213e 50%, #0f0f23 100%)',
-        zIndex: 100,
+        background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f0f23 100%)',
       }}
     >
-      {/* Header */}
+      {/* 左侧导航栏 */}
       <div
-        className="flex items-center justify-between px-6 py-4"
-        style={{ borderBottom: '1px solid rgba(255,255,255,0.1)' }}
+        className="w-64 flex flex-col py-6"
+        style={{
+          background: 'rgba(0,0,0,0.3)',
+          borderRight: '1px solid rgba(255,255,255,0.08)',
+        }}
       >
-        <div className="flex items-center gap-3">
-          <div
-            className="w-10 h-10 rounded-xl flex items-center justify-center text-lg"
-            style={{ background: 'linear-gradient(135deg, #e94560, #ff6b8a)' }}
-          >
-            ⚙️
-          </div>
-          <div>
-            <h2 className="text-lg font-bold" style={{ color: '#fff' }}>设置中心</h2>
-            <p className="text-xs" style={{ color: '#888' }}>配置你的 AI 伙伴</p>
+        {/* Logo */}
+        <div className="px-6 mb-6">
+          <div className="flex items-center gap-3">
+            <div
+              className="w-10 h-10 rounded-xl flex items-center justify-center text-lg"
+              style={{ background: 'linear-gradient(135deg, #e94560, #ff6b8a)' }}
+            >
+              ⚙️
+            </div>
+            <div>
+              <h1 className="text-base font-bold" style={{ color: '#fff' }}>设置中心</h1>
+              <p className="text-xs" style={{ color: '#666' }}>AI Companion</p>
+            </div>
           </div>
         </div>
-        <button
-          onClick={onClose}
-          className="w-10 h-10 flex items-center justify-center rounded-xl transition-all hover:opacity-80"
-          style={{ background: 'rgba(255,255,255,0.1)', color: '#fff' }}
-        >
-          ✕
-        </button>
-      </div>
 
-      {/* Tab Navigation */}
-      <div className="flex px-4 py-3 gap-2" style={{ borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
-        {tabs.map(tab => (
+        {/* Tab 导航 */}
+        <nav className="flex-1 px-3 space-y-1">
+          {tabs.map(tab => (
+            <button
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left transition-all"
+              style={{
+                background: activeTab === tab.key
+                  ? `linear-gradient(90deg, ${tab.color}33, ${tab.color}11)`
+                  : 'transparent',
+                borderLeft: activeTab === tab.key ? `3px solid ${tab.color}` : '3px solid transparent',
+              }}
+            >
+              <span className="text-xl">{tab.icon}</span>
+              <div>
+                <div
+                  className="text-sm font-medium"
+                  style={{ color: activeTab === tab.key ? tab.color : '#888' }}
+                >
+                  {tab.label}
+                </div>
+                <div className="text-xs" style={{ color: '#555' }}>{tab.desc}</div>
+              </div>
+            </button>
+          ))}
+        </nav>
+
+        {/* 关闭按钮 */}
+        <div className="px-6 mt-auto">
           <button
-            key={tab.key}
-            onClick={() => setActiveTab(tab.key)}
-            className="px-4 py-2.5 rounded-xl text-sm font-medium transition-all flex-1"
+            onClick={onClose}
+            className="w-full py-3 rounded-xl text-sm font-medium transition-all"
             style={{
-              background: activeTab === tab.key
-                ? `linear-gradient(135deg, ${tab.color}33, ${tab.color}22)`
-                : 'rgba(255,255,255,0.05)',
-              color: activeTab === tab.key ? tab.color : '#888',
-              border: activeTab === tab.key ? `2px solid ${tab.color}66` : '2px solid transparent',
+              background: 'rgba(255,255,255,0.1)',
+              color: '#fff',
             }}
           >
-            {tab.label}
+            ← 返回聊天
           </button>
-        ))}
+        </div>
       </div>
 
-      {/* Content Area */}
-      <div className="flex-1 overflow-y-auto p-6">
-        {activeTab === 'character' && (
-          <div className="space-y-6">
-            {/* Character Name */}
-            <div className="p-5 rounded-2xl" style={{ background: 'rgba(233,69,96,0.1)', border: '1px solid rgba(233,69,96,0.2)' }}>
-              <h3 className="text-sm font-semibold mb-3" style={{ color: '#e94560' }}>角色名称</h3>
-              <input
-                type="text"
-                value={characterSettings.name}
-                onChange={(e) => {
-                  setCharacterSettings({ ...characterSettings, name: e.target.value });
-                  setCharacter({ ...character, name: e.target.value });
-                }}
-                className="w-full px-4 py-3 rounded-xl text-sm"
-                style={{ background: 'rgba(255,255,255,0.1)', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' }}
-              />
-            </div>
-
-            {/* Personality */}
-            <div className="p-5 rounded-2xl" style={{ background: 'rgba(233,69,96,0.1)', border: '1px solid rgba(233,69,96,0.2)' }}>
-              <h3 className="text-sm font-semibold mb-3" style={{ color: '#e94560' }}>性格设定</h3>
-              <div className="flex flex-wrap gap-2 mb-3">
-                {personalityOptions.map(tag => (
-                  <button
-                    key={tag}
-                    onClick={() => togglePersonality(tag)}
-                    className="px-3 py-1.5 rounded-full text-xs transition-all"
-                    style={{
-                      background: characterSettings.personality.includes(tag)
-                        ? 'linear-gradient(135deg, #e94560, #ff6b8a)'
-                        : 'rgba(255,255,255,0.1)',
-                      color: '#fff',
-                    }}
-                  >
-                    {tag}
-                  </button>
-                ))}
-              </div>
-              <p className="text-xs" style={{ color: '#888' }}>
-                当前: {characterSettings.personality.join(' + ') || '未选择'}
-              </p>
-            </div>
-
-            {/* Photo Path */}
-            <div className="p-5 rounded-2xl" style={{ background: 'rgba(233,69,96,0.1)', border: '1px solid rgba(233,69,96,0.2)' }}>
-              <h3 className="text-sm font-semibold mb-3" style={{ color: '#e94560' }}>人物照片路径</h3>
-              <input
-                type="text"
-                value={characterSettings.photoPath}
-                onChange={(e) => {
-                  setCharacterSettings({ ...characterSettings, photoPath: e.target.value });
-                  setPhotoPath(e.target.value);
-                }}
-                className="w-full px-4 py-3 rounded-xl text-sm"
-                style={{ background: 'rgba(255,255,255,0.1)', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' }}
-              />
-              <p className="text-xs mt-2" style={{ color: '#888' }}>设置为包含角色立绘的文件夹路径</p>
-            </div>
-
-            {/* Custom Description */}
-            <div className="p-5 rounded-2xl" style={{ background: 'rgba(233,69,96,0.1)', border: '1px solid rgba(233,69,96,0.2)' }}>
-              <h3 className="text-sm font-semibold mb-3" style={{ color: '#e94560' }}>角色背景描述</h3>
-              <textarea
-                value={characterSettings.customDescription || ''}
-                onChange={(e) => setCharacterSettings({ ...characterSettings, customDescription: e.target.value })}
-                placeholder="描述你的人物背景、特点、外貌等..."
-                className="w-full px-4 py-3 rounded-xl text-sm resize-none"
-                rows={4}
-                style={{ background: 'rgba(255,255,255,0.1)', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' }}
-              />
-              <p className="text-xs mt-2" style={{ color: '#888' }}>这个描述会影响AI的回复风格</p>
-            </div>
+      {/* 右侧内容区 */}
+      <div className="flex-1 flex flex-col overflow-hidden">
+        {/* Header */}
+        <div
+          className="px-8 py-5 flex items-center justify-between"
+          style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}
+        >
+          <div>
+            <h2 className="text-xl font-bold" style={{ color: '#fff' }}>
+              {tabs.find(t => t.key === activeTab)?.label}
+            </h2>
+            <p className="text-sm mt-0.5" style={{ color: '#666' }}>
+              {tabs.find(t => t.key === activeTab)?.desc}
+            </p>
           </div>
-        )}
+          <button
+            onClick={onClose}
+            className="w-10 h-10 flex items-center justify-center rounded-xl transition-all hover:opacity-80"
+            style={{ background: 'rgba(255,255,255,0.1)', color: '#fff' }}
+          >
+            ✕
+          </button>
+        </div>
 
-        {activeTab === 'system' && (
-          <div className="space-y-6">
-            {/* Screen Watch */}
-            <div className="p-5 rounded-2xl" style={{ background: 'rgba(59,130,246,0.1)', border: '1px solid rgba(59,130,246,0.2)' }}>
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-sm font-semibold" style={{ color: '#3b82f6' }}>截屏观察模式</h3>
-                  <p className="text-xs mt-1" style={{ color: '#888' }}>自动检测屏幕内容主动说话</p>
-                </div>
-                <button
-                  onClick={() => setStyleSettings({ ...styleSettings, enableScreenWatch: !styleSettings.enableScreenWatch })}
-                  className="w-14 h-8 rounded-full transition-all relative"
-                  style={{
-                    background: styleSettings.enableScreenWatch ? '#3b82f6' : 'rgba(255,255,255,0.2)',
-                  }}
-                >
-                  <div
-                    className="w-6 h-6 rounded-full absolute top-1 transition-all"
-                    style={{
-                      background: '#fff',
-                      left: styleSettings.enableScreenWatch ? '32px' : '4px',
-                    }}
-                  />
-                </button>
-              </div>
-            </div>
-
-            {/* Screen Interval */}
-            <div className="p-5 rounded-2xl" style={{ background: 'rgba(59,130,246,0.1)', border: '1px solid rgba(59,130,246,0.2)' }}>
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="text-sm font-semibold" style={{ color: '#3b82f6' }}>截屏间隔时间</h3>
-                <span className="text-2xl font-bold" style={{ color: '#3b82f6' }}>{systemSettings.screenWatchInterval}秒</span>
-              </div>
-              <input
-                type="range"
-                min="10"
-                max="120"
-                step="5"
-                value={systemSettings.screenWatchInterval}
-                onChange={(e) => setSystemSettings({ ...systemSettings, screenWatchInterval: parseInt(e.target.value) })}
-                className="w-full"
-                style={{ accentColor: '#3b82f6' }}
-              />
-              <p className="text-xs mt-2" style={{ color: '#888' }}>间隔越短，检测越频繁但占用资源越多</p>
-            </div>
-
-            {/* Auto Reply */}
-            <div className="p-5 rounded-2xl" style={{ background: 'rgba(59,130,246,0.1)', border: '1px solid rgba(59,130,246,0.2)' }}>
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-sm font-semibold" style={{ color: '#3b82f6' }}>主动回复</h3>
-                  <p className="text-xs mt-1" style={{ color: '#888' }}>开启后AI会主动发起对话</p>
-                </div>
-                <button
-                  onClick={() => setStyleSettings({ ...styleSettings, enableAutoReply: !styleSettings.enableAutoReply })}
-                  className="w-14 h-8 rounded-full transition-all relative"
-                  style={{
-                    background: styleSettings.enableAutoReply ? '#3b82f6' : 'rgba(255,255,255,0.2)',
-                  }}
-                >
-                  <div
-                    className="w-6 h-6 rounded-full absolute top-1 transition-all"
-                    style={{
-                      background: '#fff',
-                      left: styleSettings.enableAutoReply ? '32px' : '4px',
-                    }}
-                  />
-                </button>
-              </div>
-            </div>
-
-            {/* TTS */}
-            <div className="p-5 rounded-2xl" style={{ background: 'rgba(59,130,246,0.1)', border: '1px solid rgba(59,130,246,0.2)' }}>
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-sm font-semibold" style={{ color: '#3b82f6' }}>语音朗读 (TTS)</h3>
-                  <p className="text-xs mt-1" style={{ color: '#888' }}>AI回复时自动朗读文字</p>
-                </div>
-                <button
-                  onClick={() => setStyleSettings({ ...styleSettings, enableTTS: !styleSettings.enableTTS })}
-                  className="w-14 h-8 rounded-full transition-all relative"
-                  style={{
-                    background: styleSettings.enableTTS ? '#3b82f6' : 'rgba(255,255,255,0.2)',
-                  }}
-                >
-                  <div
-                    className="w-6 h-6 rounded-full absolute top-1 transition-all"
-                    style={{
-                      background: '#fff',
-                      left: styleSettings.enableTTS ? '32px' : '4px',
-                    }}
-                  />
-                </button>
-              </div>
-            </div>
-
-            {/* Memory Days */}
-            <div className="p-5 rounded-2xl" style={{ background: 'rgba(59,130,246,0.1)', border: '1px solid rgba(59,130,246,0.2)' }}>
-              <div className="flex items-center justify-between mb-3">
-                <div>
-                  <h3 className="text-sm font-semibold" style={{ color: '#3b82f6' }}>记忆保存天数</h3>
-                  <p className="text-xs mt-1" style={{ color: '#888' }}>超过天数的记忆会被自动清理</p>
-                </div>
-                <span className="text-2xl font-bold" style={{ color: '#3b82f6' }}>{systemSettings.memoryDays}天</span>
-              </div>
-              <input
-                type="range"
-                min="7"
-                max="90"
-                step="1"
-                value={systemSettings.memoryDays}
-                onChange={(e) => setSystemSettings({ ...systemSettings, memoryDays: parseInt(e.target.value) })}
-                className="w-full"
-                style={{ accentColor: '#3b82f6' }}
-              />
-            </div>
-
-            {/* Auto Reply Speed */}
-            <div className="p-5 rounded-2xl" style={{ background: 'rgba(59,130,246,0.1)', border: '1px solid rgba(59,130,246,0.2)' }}>
-              <h3 className="text-sm font-semibold mb-3" style={{ color: '#3b82f6' }}>主动回复速度</h3>
-              <div className="flex gap-2">
-                {(['slow', 'normal', 'fast'] as const).map(speed => (
-                  <button
-                    key={speed}
-                    onClick={() => setSystemSettings({ ...systemSettings, autoReplySpeed: speed })}
-                    className="flex-1 py-3 rounded-xl text-sm font-medium transition-all"
-                    style={{
-                      background: systemSettings.autoReplySpeed === speed
-                        ? 'linear-gradient(135deg, #3b82f6, #60a5fa)'
-                        : 'rgba(255,255,255,0.1)',
-                      color: '#fff',
-                    }}
-                  >
-                    {speed === 'slow' ? '🐢 慢' : speed === 'normal' ? '🚶 正常' : '🚀 快'}
-                  </button>
-                ))}
-              </div>
-              <p className="text-xs mt-2" style={{ color: '#888' }}>
-                {systemSettings.autoReplySpeed === 'slow' ? '大约每5分钟回复一次' :
-                 systemSettings.autoReplySpeed === 'normal' ? '大约每2分钟回复一次' :
-                 '大约每30秒回复一次'}
-              </p>
-            </div>
-          </div>
-        )}
-
-        {activeTab === 'model' && (
-          <div className="space-y-6">
-            {/* API Config */}
-            <div className="p-5 rounded-2xl" style={{ background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.2)' }}>
-              <h3 className="text-sm font-semibold mb-4" style={{ color: '#22c55e' }}>API 配置</h3>
-              
-              <div className="space-y-4">
-                <div>
-                  <label className="text-xs mb-1 block" style={{ color: '#888' }}>Provider</label>
-                  <select
-                    value={aiConfig.provider}
-                    onChange={(e) => setAIConfig({ ...aiConfig, provider: e.target.value })}
-                    className="w-full px-4 py-3 rounded-xl text-sm"
-                    style={{ background: 'rgba(255,255,255,0.1)', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' }}
-                  >
-                    <option value="minimax">MiniMax (在线)</option>
-                    <option value="openai">OpenAI</option>
-                    <option value="ollama">Ollama (本地)</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="text-xs mb-1 block" style={{ color: '#888' }}>API Base URL</label>
-                  <input
-                    type="text"
-                    value={aiConfig.baseUrl}
-                    onChange={(e) => setAIConfig({ ...aiConfig, baseUrl: e.target.value })}
-                    className="w-full px-4 py-3 rounded-xl text-sm"
-                    style={{ background: 'rgba(255,255,255,0.1)', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' }}
-                  />
-                </div>
-
-                <div>
-                  <label className="text-xs mb-1 block" style={{ color: '#888' }}>API Key</label>
-                  <input
-                    type="password"
-                    value={aiConfig.apiKey || ''}
-                    onChange={(e) => setAIConfig({ ...aiConfig, apiKey: e.target.value })}
-                    className="w-full px-4 py-3 rounded-xl text-sm"
-                    style={{ background: 'rgba(255,255,255,0.1)', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' }}
-                  />
-                </div>
-
-                <div>
-                  <label className="text-xs mb-1 block" style={{ color: '#888' }}>Model</label>
-                  <input
-                    type="text"
-                    value={aiConfig.model}
-                    onChange={(e) => setAIConfig({ ...aiConfig, model: e.target.value })}
-                    className="w-full px-4 py-3 rounded-xl text-sm"
-                    style={{ background: 'rgba(255,255,255,0.1)', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' }}
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Advanced */}
-            <div className="p-5 rounded-2xl" style={{ background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.2)' }}>
-              <h3 className="text-sm font-semibold mb-4" style={{ color: '#22c55e' }}>高级设置</h3>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="text-xs mb-1 block" style={{ color: '#888' }}>Max Tokens</label>
-                  <input
-                    type="number"
-                    value={aiConfig.maxTokens}
-                    onChange={(e) => setAIConfig({ ...aiConfig, maxTokens: parseInt(e.target.value) || 200 })}
-                    className="w-full px-4 py-3 rounded-xl text-sm"
-                    style={{ background: 'rgba(255,255,255,0.1)', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' }}
-                  />
-                </div>
-                <div>
-                  <label className="text-xs mb-1 block" style={{ color: '#888' }}>Temperature</label>
-                  <input
-                    type="number"
-                    step="0.1"
-                    min="0"
-                    max="2"
-                    value={aiConfig.temperature}
-                    onChange={(e) => setAIConfig({ ...aiConfig, temperature: parseFloat(e.target.value) || 0.8 })}
-                    className="w-full px-4 py-3 rounded-xl text-sm"
-                    style={{ background: 'rgba(255,255,255,0.1)', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' }}
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Connection Test */}
-            <div className="p-5 rounded-2xl" style={{ background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.2)' }}>
-              <h3 className="text-sm font-semibold mb-4" style={{ color: '#22c55e' }}>连接测试</h3>
-              <button
-                onClick={testApiConnection}
-                disabled={testStatus === 'testing'}
-                className="w-full py-4 rounded-xl text-sm font-bold transition-all"
-                style={{
-                  background: testStatus === 'success' ? '#22c55e' : testStatus === 'error' ? '#ef4444' : 'linear-gradient(135deg, #22c55e, #16a34a)',
-                  color: '#fff',
-                  opacity: testStatus === 'testing' ? 0.7 : 1,
-                }}
+        {/* 内容 */}
+        <div className="flex-1 overflow-y-auto p-8">
+          {/* ========== 人物设定 ========== */}
+          {activeTab === 'character' && (
+            <div className="max-w-3xl space-y-8">
+              {/* 角色名称 */}
+              <div
+                className="p-6 rounded-2xl"
+                style={{ background: 'rgba(233,69,96,0.08)', border: '1px solid rgba(233,69,96,0.2)' }}
               >
-                {testStatus === 'testing' ? '测试中...' : testStatus === 'success' ? `✓ 连接成功 ${testLatency}ms` : testStatus === 'error' ? '✗ 连接失败' : '测试 API 连接'}
-              </button>
-            </div>
-          </div>
-        )}
+                <div className="flex items-center gap-2 mb-4">
+                  <span className="text-lg">👤</span>
+                  <h3 className="text-base font-semibold" style={{ color: '#e94560' }}>角色名称</h3>
+                </div>
+                <input
+                  type="text"
+                  value={characterSettings.name}
+                  onChange={(e) => {
+                    setCharacterSettings({ ...characterSettings, name: e.target.value });
+                    setCharacter({ ...character, name: e.target.value });
+                  }}
+                  className="w-full px-5 py-4 rounded-xl text-sm"
+                  style={{
+                    background: 'rgba(255,255,255,0.08)',
+                    color: '#fff',
+                    border: '1px solid rgba(255,255,255,0.12)',
+                  }}
+                  placeholder="输入角色名称..."
+                />
+              </div>
 
-        {activeTab === 'style' && (
-          <div className="space-y-6">
-            {/* Display Control */}
-            <div className="p-5 rounded-2xl" style={{ background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.2)' }}>
-              <h3 className="text-sm font-semibold mb-4" style={{ color: '#f59e0b' }}>显示控制</h3>
-              <div className="space-y-4">
-                {[
-                  { key: 'showEmotionBar', label: '情绪指标条', desc: '顶部情绪可视化条' },
-                  { key: 'showCharacter', label: '角色立绘', desc: '显示角色图片展示' },
-                  { key: 'showChat', label: '聊天面板', desc: '对话输入和显示区域' },
-                  { key: 'showToolbar', label: '底部工具栏', desc: '底部功能按钮栏' },
-                ].map(item => (
-                  <div key={item.key} className="flex items-center justify-between">
-                    <div>
-                      <span className="text-sm" style={{ color: '#fff' }}>{item.label}</span>
-                      <p className="text-xs" style={{ color: '#888' }}>{item.desc}</p>
-                    </div>
+              {/* 性格设定 */}
+              <div
+                className="p-6 rounded-2xl"
+                style={{ background: 'rgba(233,69,96,0.08)', border: '1px solid rgba(233,69,96,0.2)' }}
+              >
+                <div className="flex items-center gap-2 mb-4">
+                  <span className="text-lg">💫</span>
+                  <h3 className="text-base font-semibold" style={{ color: '#e94560' }}>性格设定</h3>
+                </div>
+                <div className="flex flex-wrap gap-2 mb-4">
+                  {personalityOptions.map(tag => (
                     <button
-                      onClick={() => setStyleSettings({ ...styleSettings, [item.key]: !styleSettings[item.key as keyof typeof styleSettings] })}
-                      className="w-14 h-8 rounded-full transition-all relative"
+                      key={tag}
+                      onClick={() => togglePersonality(tag)}
+                      className="px-4 py-2 rounded-full text-sm transition-all"
                       style={{
-                        background: styleSettings[item.key as keyof typeof styleSettings] ? '#f59e0b' : 'rgba(255,255,255,0.2)',
+                        background: characterSettings.personality.includes(tag)
+                          ? 'linear-gradient(135deg, #e94560, #ff6b8a)'
+                          : 'rgba(255,255,255,0.08)',
+                        color: '#fff',
+                        border: characterSettings.personality.includes(tag)
+                          ? 'none'
+                          : '1px solid rgba(255,255,255,0.12)',
                       }}
                     >
-                      <div
-                        className="w-6 h-6 rounded-full absolute top-1 transition-all"
-                        style={{
-                          background: '#fff',
-                          left: styleSettings[item.key as keyof typeof styleSettings] ? '32px' : '4px',
-                        }}
-                      />
+                      {characterSettings.personality.includes(tag) ? '✓ ' : ''}{tag}
                     </button>
-                  </div>
-                ))}
+                  ))}
+                </div>
+                <div
+                  className="p-3 rounded-xl text-sm"
+                  style={{ background: 'rgba(0,0,0,0.3)', color: '#aaa' }}
+                >
+                  当前性格: {characterSettings.personality.join(' + ') || '未选择'}
+                </div>
+              </div>
+
+              {/* 人物照片路径 */}
+              <div
+                className="p-6 rounded-2xl"
+                style={{ background: 'rgba(233,69,96,0.08)', border: '1px solid rgba(233,69,96,0.2)' }}
+              >
+                <div className="flex items-center gap-2 mb-4">
+                  <span className="text-lg">🖼️</span>
+                  <h3 className="text-base font-semibold" style={{ color: '#e94560' }}>人物照片读取路径</h3>
+                </div>
+                <input
+                  type="text"
+                  value={characterSettings.photoPath}
+                  onChange={(e) => {
+                    setCharacterSettings({ ...characterSettings, photoPath: e.target.value });
+                    setPhotoPath(e.target.value);
+                  }}
+                  className="w-full px-5 py-4 rounded-xl text-sm"
+                  style={{
+                    background: 'rgba(255,255,255,0.08)',
+                    color: '#fff',
+                    border: '1px solid rgba(255,255,255,0.12)',
+                  }}
+                  placeholder="例: E:/Pictures/Characters/"
+                />
+                <p className="text-xs mt-2" style={{ color: '#666' }}>
+                  设置包含角色立绘图片的文件夹路径，图片将按文件名自动切换表情
+                </p>
+              </div>
+
+              {/* 角色背景描述 */}
+              <div
+                className="p-6 rounded-2xl"
+                style={{ background: 'rgba(233,69,96,0.08)', border: '1px solid rgba(233,69,96,0.2)' }}
+              >
+                <div className="flex items-center gap-2 mb-4">
+                  <span className="text-lg">📝</span>
+                  <h3 className="text-base font-semibold" style={{ color: '#e94560' }}>角色背景描述</h3>
+                </div>
+                <textarea
+                  value={characterSettings.customDescription || ''}
+                  onChange={(e) => setCharacterSettings({ ...characterSettings, customDescription: e.target.value })}
+                  placeholder="描述你的人物背景、特点、外貌、经历等...&#10;&#10;这个描述会影响AI的回复风格和对话内容"
+                  className="w-full px-5 py-4 rounded-xl text-sm resize-none"
+                  rows={5}
+                  style={{
+                    background: 'rgba(255,255,255,0.08)',
+                    color: '#fff',
+                    border: '1px solid rgba(255,255,255,0.12)',
+                  }}
+                />
               </div>
             </div>
+          )}
 
-            {/* Feature Toggle */}
-            <div className="p-5 rounded-2xl" style={{ background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.2)' }}>
-              <h3 className="text-sm font-semibold mb-4" style={{ color: '#f59e0b' }}>功能开关</h3>
-              <div className="space-y-4">
-                {[
-                  { key: 'enableTTS', label: '语音朗读', desc: 'AI回复时自动朗读' },
-                  { key: 'enableScreenWatch', label: '截屏观察', desc: '监控屏幕主动互动' },
-                  { key: 'enableAutoReply', label: '主动回复', desc: '无交互时主动发起对话' },
-                ].map(item => (
-                  <div key={item.key} className="flex items-center justify-between">
-                    <div>
-                      <span className="text-sm" style={{ color: '#fff' }}>{item.label}</span>
-                      <p className="text-xs" style={{ color: '#888' }}>{item.desc}</p>
-                    </div>
+          {/* ========== 记忆系统 ========== */}
+          {activeTab === 'memory' && (
+            <div className="max-w-3xl space-y-8">
+              {/* 记忆保存天数 */}
+              <div
+                className="p-6 rounded-2xl"
+                style={{ background: 'rgba(168,85,247,0.08)', border: '1px solid rgba(168,85,247,0.2)' }}
+              >
+                <div className="flex items-center gap-2 mb-4">
+                  <span className="text-lg">🧠</span>
+                  <h3 className="text-base font-semibold" style={{ color: '#a855f7' }}>记忆保存天数</h3>
+                </div>
+                <p className="text-sm mb-4" style={{ color: '#888' }}>
+                  超过天数的记忆会被自动清理。建议设置 30-90 天
+                </p>
+                <div className="grid grid-cols-5 gap-3">
+                  {memoryDaysOptions.map(opt => (
                     <button
-                      onClick={() => setStyleSettings({ ...styleSettings, [item.key]: !styleSettings[item.key as keyof typeof styleSettings] })}
-                      className="w-14 h-8 rounded-full transition-all relative"
+                      key={opt.value}
+                      onClick={() => setSystemSettings({ ...systemSettings, memoryDays: opt.value })}
+                      className="py-4 rounded-xl text-sm font-medium transition-all"
                       style={{
-                        background: styleSettings[item.key as keyof typeof styleSettings] ? '#f59e0b' : 'rgba(255,255,255,0.2)',
+                        background: systemSettings.memoryDays === opt.value
+                          ? 'linear-gradient(135deg, #a855f7, #c084fc)'
+                          : 'rgba(255,255,255,0.08)',
+                        color: '#fff',
+                        border: systemSettings.memoryDays === opt.value
+                          ? 'none'
+                          : '1px solid rgba(255,255,255,0.12)',
                       }}
                     >
-                      <div
-                        className="w-6 h-6 rounded-full absolute top-1 transition-all"
-                        style={{
-                          background: '#fff',
-                          left: styleSettings[item.key as keyof typeof styleSettings] ? '32px' : '4px',
-                        }}
-                      />
+                      {opt.label}
                     </button>
+                  ))}
+                </div>
+                <div
+                  className="mt-4 p-3 rounded-xl text-sm"
+                  style={{ background: 'rgba(0,0,0,0.3)', color: '#aaa' }}
+                >
+                  当前设置: 记忆保留 <span style={{ color: '#a855f7', fontWeight: 'bold' }}>{systemSettings.memoryDays}</span> 天
+                </div>
+              </div>
+
+              {/* 记忆清理策略 */}
+              <div
+                className="p-6 rounded-2xl"
+                style={{ background: 'rgba(168,85,247,0.08)', border: '1px solid rgba(168,85,247,0.2)' }}
+              >
+                <div className="flex items-center gap-2 mb-4">
+                  <span className="text-lg">🗑️</span>
+                  <h3 className="text-base font-semibold" style={{ color: '#a855f7' }}>记忆清理策略</h3>
+                </div>
+                <div className="space-y-3">
+                  {[
+                    { label: '自动过期清理', desc: '自动删除过期记忆', enabled: true },
+                    { label: '重要记忆永久保留', desc: '标记重要的记忆不会被清理', enabled: true },
+                    { label: '定期整合记忆', desc: '将相似记忆合并减少冗余', enabled: false },
+                  ].map((item, i) => (
+                    <div key={i} className="flex items-center justify-between p-4 rounded-xl" style={{ background: 'rgba(255,255,255,0.05)' }}>
+                      <div>
+                        <div className="text-sm" style={{ color: '#fff' }}>{item.label}</div>
+                        <div className="text-xs" style={{ color: '#666' }}>{item.desc}</div>
+                      </div>
+                      <div
+                        className="w-12 h-7 rounded-full relative cursor-pointer transition-all"
+                        style={{ background: item.enabled ? '#a855f7' : 'rgba(255,255,255,0.2)' }}
+                      >
+                        <div
+                          className="w-5 h-5 rounded-full absolute top-1 transition-all"
+                          style={{ background: '#fff', left: item.enabled ? '22px' : '4px' }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* 记忆统计 */}
+              <div
+                className="p-6 rounded-2xl"
+                style={{ background: 'rgba(168,85,247,0.08)', border: '1px solid rgba(168,85,247,0.2)' }}
+              >
+                <div className="flex items-center gap-2 mb-4">
+                  <span className="text-lg">📊</span>
+                  <h3 className="text-base font-semibold" style={{ color: '#a855f7' }}>记忆统计</h3>
+                </div>
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="p-4 rounded-xl text-center" style={{ background: 'rgba(0,0,0,0.3)' }}>
+                    <div className="text-2xl font-bold" style={{ color: '#a855f7' }}>--</div>
+                    <div className="text-xs" style={{ color: '#666' }}>总记忆数</div>
                   </div>
-                ))}
+                  <div className="p-4 rounded-xl text-center" style={{ background: 'rgba(0,0,0,0.3)' }}>
+                    <div className="text-2xl font-bold" style={{ color: '#a855f7' }}>--</div>
+                    <div className="text-xs" style={{ color: '#666' }}>今日新增</div>
+                  </div>
+                  <div className="p-4 rounded-xl text-center" style={{ background: 'rgba(0,0,0,0.3)' }}>
+                    <div className="text-2xl font-bold" style={{ color: '#a855f7' }}>--</div>
+                    <div className="text-xs" style={{ color: '#666' }}>本周访问</div>
+                  </div>
+                </div>
               </div>
             </div>
+          )}
 
-            {/* About */}
-            <div className="p-5 rounded-2xl" style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }}>
-              <h3 className="text-sm font-semibold mb-2" style={{ color: '#888' }}>关于</h3>
-              <p className="text-sm" style={{ color: '#fff' }}>AI Companion <span style={{ color: '#f59e0b' }}>v0.2.0</span></p>
-              <p className="text-xs" style={{ color: '#666' }}>人格化 AI 桌面副官</p>
+          {/* ========== 系统设定 ========== */}
+          {activeTab === 'system' && (
+            <div className="max-w-3xl space-y-8">
+              {/* 截屏观察模式 */}
+              <div
+                className="p-6 rounded-2xl"
+                style={{ background: 'rgba(59,130,246,0.08)', border: '1px solid rgba(59,130,246,0.2)' }}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <span className="text-2xl">👁️</span>
+                    <div>
+                      <h3 className="text-base font-semibold" style={{ color: '#3b82f6' }}>截屏观察模式</h3>
+                      <p className="text-xs mt-0.5" style={{ color: '#888' }}>开启后AI会定时截取屏幕内容并分析是否需要主动说话</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setStyleSettings({ ...styleSettings, enableScreenWatch: !styleSettings.enableScreenWatch })}
+                    className="w-16 h-9 rounded-full transition-all relative"
+                    style={{
+                      background: styleSettings.enableScreenWatch ? '#3b82f6' : 'rgba(255,255,255,0.2)',
+                    }}
+                  >
+                    <div
+                      className="w-7 h-7 rounded-full absolute top-1 transition-all"
+                      style={{
+                        background: '#fff',
+                        left: styleSettings.enableScreenWatch ? '34px' : '4px',
+                      }}
+                    />
+                  </button>
+                </div>
+              </div>
+
+              {/* 截屏间隔时间 */}
+              <div
+                className="p-6 rounded-2xl"
+                style={{ background: 'rgba(59,130,246,0.08)', border: '1px solid rgba(59,130,246,0.2)' }}
+              >
+                <div className="flex items-center gap-2 mb-4">
+                  <span className="text-lg">⏱️</span>
+                  <h3 className="text-base font-semibold" style={{ color: '#3b82f6' }}>截屏间隔时间</h3>
+                </div>
+                <p className="text-sm mb-4" style={{ color: '#888' }}>
+                  间隔越短，检测越频繁但占用资源越多。建议 30-60 秒
+                </p>
+                <div className="grid grid-cols-5 gap-3">
+                  {screenIntervalOptions.map(opt => (
+                    <button
+                      key={opt.value}
+                      onClick={() => setSystemSettings({ ...systemSettings, screenWatchInterval: opt.value })}
+                      className="py-3 rounded-xl text-sm font-medium transition-all"
+                      style={{
+                        background: systemSettings.screenWatchInterval === opt.value
+                          ? 'linear-gradient(135deg, #3b82f6, #60a5fa)'
+                          : 'rgba(255,255,255,0.08)',
+                        color: '#fff',
+                        border: systemSettings.screenWatchInterval === opt.value
+                          ? 'none'
+                          : '1px solid rgba(255,255,255,0.12)',
+                      }}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* 主动回复 */}
+              <div
+                className="p-6 rounded-2xl"
+                style={{ background: 'rgba(59,130,246,0.08)', border: '1px solid rgba(59,130,246,0.2)' }}
+              >
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-3">
+                    <span className="text-2xl">💬</span>
+                    <div>
+                      <h3 className="text-base font-semibold" style={{ color: '#3b82f6' }}>主动回复</h3>
+                      <p className="text-xs mt-0.5" style={{ color: '#888' }}>开启后AI会主动发起对话，不会一直等你发消息</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setStyleSettings({ ...styleSettings, enableAutoReply: !styleSettings.enableAutoReply })}
+                    className="w-16 h-9 rounded-full transition-all relative"
+                    style={{
+                      background: styleSettings.enableAutoReply ? '#3b82f6' : 'rgba(255,255,255,0.2)',
+                    }}
+                  >
+                    <div
+                      className="w-7 h-7 rounded-full absolute top-1 transition-all"
+                      style={{
+                        background: '#fff',
+                        left: styleSettings.enableAutoReply ? '34px' : '4px',
+                      }}
+                    />
+                  </button>
+                </div>
+
+                <div className="mt-4">
+                  <h4 className="text-sm font-medium mb-3" style={{ color: '#3b82f6' }}>回复速度</h4>
+                  <div className="grid grid-cols-3 gap-3">
+                    {replySpeedOptions.map(opt => (
+                      <button
+                        key={opt.value}
+                        onClick={() => setSystemSettings({ ...systemSettings, autoReplySpeed: opt.value as any })}
+                        className="py-4 rounded-xl text-sm transition-all"
+                        style={{
+                          background: systemSettings.autoReplySpeed === opt.value
+                            ? 'linear-gradient(135deg, #3b82f6, #60a5fa)'
+                            : 'rgba(255,255,255,0.08)',
+                          color: '#fff',
+                          border: systemSettings.autoReplySpeed === opt.value
+                            ? 'none'
+                            : '1px solid rgba(255,255,255,0.12)',
+                        }}
+                      >
+                        <div className="font-medium">{opt.label}</div>
+                        <div className="text-xs mt-1" style={{ color: 'rgba(255,255,255,0.6)' }}>{opt.desc}</div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* TTS 语音设置 */}
+              <div
+                className="p-6 rounded-2xl"
+                style={{ background: 'rgba(59,130,246,0.08)', border: '1px solid rgba(59,130,246,0.2)' }}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <span className="text-2xl">🔊</span>
+                    <div>
+                      <h3 className="text-base font-semibold" style={{ color: '#3b82f6' }}>语音朗读 (TTS)</h3>
+                      <p className="text-xs mt-0.5" style={{ color: '#888' }}>AI回复时自动朗读文字内容</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setStyleSettings({ ...styleSettings, enableTTS: !styleSettings.enableTTS })}
+                    className="w-16 h-9 rounded-full transition-all relative"
+                    style={{
+                      background: styleSettings.enableTTS ? '#3b82f6' : 'rgba(255,255,255,0.2)',
+                    }}
+                  >
+                    <div
+                      className="w-7 h-7 rounded-full absolute top-1 transition-all"
+                      style={{
+                        background: '#fff',
+                        left: styleSettings.enableTTS ? '34px' : '4px',
+                      }}
+                    />
+                  </button>
+                </div>
+              </div>
             </div>
-          </div>
-        )}
+          )}
+
+          {/* ========== 模型设置 ========== */}
+          {activeTab === 'model' && (
+            <div className="max-w-3xl space-y-8">
+              {/* API 配置 */}
+              <div
+                className="p-6 rounded-2xl"
+                style={{ background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.2)' }}
+              >
+                <div className="flex items-center gap-2 mb-6">
+                  <span className="text-lg">🔗</span>
+                  <h3 className="text-base font-semibold" style={{ color: '#22c55e' }}>API 配置</h3>
+                </div>
+
+                <div className="space-y-5">
+                  {/* Provider */}
+                  <div>
+                    <label className="text-xs mb-2 block" style={{ color: '#888' }}>Provider</label>
+                    <select
+                      value={aiConfig.provider}
+                      onChange={(e) => setAIConfig({ ...aiConfig, provider: e.target.value })}
+                      className="w-full px-5 py-4 rounded-xl text-sm"
+                      style={{
+                        background: 'rgba(255,255,255,0.08)',
+                        color: '#fff',
+                        border: '1px solid rgba(255,255,255,0.12)',
+                      }}
+                    >
+                      <option value="minimax">MiniMax (在线)</option>
+                      <option value="openai">OpenAI</option>
+                      <option value="ollama">Ollama (本地)</option>
+                      <option value="deepseek">DeepSeek</option>
+                    </select>
+                  </div>
+
+                  {/* API Base URL */}
+                  <div>
+                    <label className="text-xs mb-2 block" style={{ color: '#888' }}>API Base URL</label>
+                    <input
+                      type="text"
+                      value={aiConfig.baseUrl}
+                      onChange={(e) => setAIConfig({ ...aiConfig, baseUrl: e.target.value })}
+                      className="w-full px-5 py-4 rounded-xl text-sm"
+                      style={{
+                        background: 'rgba(255,255,255,0.08)',
+                        color: '#fff',
+                        border: '1px solid rgba(255,255,255,0.12)',
+                      }}
+                      placeholder="https://api.minimax.chat"
+                    />
+                  </div>
+
+                  {/* API Key */}
+                  <div>
+                    <label className="text-xs mb-2 block" style={{ color: '#888' }}>API Key</label>
+                    <input
+                      type="password"
+                      value={aiConfig.apiKey || ''}
+                      onChange={(e) => setAIConfig({ ...aiConfig, apiKey: e.target.value })}
+                      className="w-full px-5 py-4 rounded-xl text-sm"
+                      style={{
+                        background: 'rgba(255,255,255,0.08)',
+                        color: '#fff',
+                        border: '1px solid rgba(255,255,255,0.12)',
+                      }}
+                      placeholder="sk-..."
+                    />
+                  </div>
+
+                  {/* Model */}
+                  <div>
+                    <label className="text-xs mb-2 block" style={{ color: '#888' }}>Model</label>
+                    <input
+                      type="text"
+                      value={aiConfig.model}
+                      onChange={(e) => setAIConfig({ ...aiConfig, model: e.target.value })}
+                      className="w-full px-5 py-4 rounded-xl text-sm"
+                      style={{
+                        background: 'rgba(255,255,255,0.08)',
+                        color: '#fff',
+                        border: '1px solid rgba(255,255,255,0.12)',
+                      }}
+                      placeholder="MiniMax-M2.7-highspeed"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* 高级设置 */}
+              <div
+                className="p-6 rounded-2xl"
+                style={{ background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.2)' }}
+              >
+                <div className="flex items-center gap-2 mb-6">
+                  <span className="text-lg">⚡</span>
+                  <h3 className="text-base font-semibold" style={{ color: '#22c55e' }}>高级设置</h3>
+                </div>
+                <div className="grid grid-cols-2 gap-5">
+                  <div>
+                    <label className="text-xs mb-2 block" style={{ color: '#888' }}>Max Tokens</label>
+                    <input
+                      type="number"
+                      value={aiConfig.maxTokens}
+                      onChange={(e) => setAIConfig({ ...aiConfig, maxTokens: parseInt(e.target.value) || 200 })}
+                      className="w-full px-5 py-4 rounded-xl text-sm"
+                      style={{
+                        background: 'rgba(255,255,255,0.08)',
+                        color: '#fff',
+                        border: '1px solid rgba(255,255,255,0.12)',
+                      }}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs mb-2 block" style={{ color: '#888' }}>Temperature</label>
+                    <input
+                      type="number"
+                      step="0.1"
+                      min="0"
+                      max="2"
+                      value={aiConfig.temperature}
+                      onChange={(e) => setAIConfig({ ...aiConfig, temperature: parseFloat(e.target.value) || 0.8 })}
+                      className="w-full px-5 py-4 rounded-xl text-sm"
+                      style={{
+                        background: 'rgba(255,255,255,0.08)',
+                        color: '#fff',
+                        border: '1px solid rgba(255,255,255,0.12)',
+                      }}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* 连接测试 */}
+              <div
+                className="p-6 rounded-2xl"
+                style={{ background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.2)' }}
+              >
+                <div className="flex items-center gap-2 mb-6">
+                  <span className="text-lg">🔍</span>
+                  <h3 className="text-base font-semibold" style={{ color: '#22c55e' }}>连接测试</h3>
+                </div>
+
+                <button
+                  onClick={testApiConnection}
+                  disabled={testStatus === 'testing'}
+                  className="w-full py-4 rounded-xl text-sm font-bold transition-all flex items-center justify-center gap-2"
+                  style={{
+                    background: testStatus === 'success'
+                      ? '#22c55e'
+                      : testStatus === 'error'
+                      ? '#ef4444'
+                      : 'linear-gradient(135deg, #22c55e, #16a34a)',
+                    color: '#fff',
+                    opacity: testStatus === 'testing' ? 0.7 : 1,
+                  }}
+                >
+                  {testStatus === 'testing' ? (
+                    <>⏳ 测试中...</>
+                  ) : testStatus === 'success' ? (
+                    <>✓ 连接成功 {testLatency}ms</>
+                  ) : testStatus === 'error' ? (
+                    <>✗ 连接失败</>
+                  ) : (
+                    <>🔗 测试 API 连接</>
+                  )}
+                </button>
+
+                {/* 连接日志 */}
+                {connectionLog.length > 0 && (
+                  <div
+                    className="mt-4 p-4 rounded-xl text-xs font-mono"
+                    style={{
+                      background: 'rgba(0,0,0,0.4)',
+                      color: '#aaa',
+                      maxHeight: '150px',
+                      overflowY: 'auto',
+                    }}
+                  >
+                    {connectionLog.map((log, i) => (
+                      <div key={i} className="py-0.5">{log}</div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* ========== 风格页面 ========== */}
+          {activeTab === 'style' && (
+            <div className="max-w-3xl space-y-8">
+              {/* 显示控制 */}
+              <div
+                className="p-6 rounded-2xl"
+                style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)' }}
+              >
+                <div className="flex items-center gap-2 mb-6">
+                  <span className="text-lg">🖥️</span>
+                  <h3 className="text-base font-semibold" style={{ color: '#f59e0b' }}>界面显示控制</h3>
+                </div>
+                <div className="space-y-4">
+                  {[
+                    { key: 'showEmotionBar', label: '情绪指标条', desc: '顶部情绪可视化条，显示当前心情状态', icon: '📊' },
+                    { key: 'showCharacter', label: '角色立绘', desc: '显示角色图片和表情动画', icon: '🎭' },
+                    { key: 'showChat', label: '聊天面板', desc: '对话输入和显示区域', icon: '💬' },
+                    { key: 'showToolbar', label: '底部工具栏', desc: '底部功能按钮栏', icon: '📌' },
+                  ].map(item => (
+                    <div
+                      key={item.key}
+                      className="flex items-center justify-between p-4 rounded-xl"
+                      style={{ background: 'rgba(255,255,255,0.05)' }}
+                    >
+                      <div className="flex items-center gap-3">
+                        <span className="text-xl">{item.icon}</span>
+                        <div>
+                          <div className="text-sm font-medium" style={{ color: '#fff' }}>{item.label}</div>
+                          <div className="text-xs" style={{ color: '#666' }}>{item.desc}</div>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => setStyleSettings({ ...styleSettings, [item.key]: !styleSettings[item.key as keyof typeof styleSettings] })}
+                        className="w-14 h-8 rounded-full transition-all relative"
+                        style={{
+                          background: styleSettings[item.key as keyof typeof styleSettings] ? '#f59e0b' : 'rgba(255,255,255,0.2)',
+                        }}
+                      >
+                        <div
+                          className="w-6 h-6 rounded-full absolute top-1 transition-all"
+                          style={{
+                            background: '#fff',
+                            left: styleSettings[item.key as keyof typeof styleSettings] ? '32px' : '4px',
+                          }}
+                        />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* 功能开关 */}
+              <div
+                className="p-6 rounded-2xl"
+                style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)' }}
+              >
+                <div className="flex items-center gap-2 mb-6">
+                  <span className="text-lg">🔘</span>
+                  <h3 className="text-base font-semibold" style={{ color: '#f59e0b' }}>功能开关</h3>
+                </div>
+                <div className="space-y-4">
+                  {[
+                    { key: 'enableTTS', label: '语音朗读', desc: 'AI回复时自动朗读文字', icon: '🔊' },
+                    { key: 'enableScreenWatch', label: '截屏观察', desc: '监控屏幕主动互动', icon: '👁️' },
+                    { key: 'enableAutoReply', label: '主动回复', desc: '无交互时主动发起对话', icon: '💬' },
+                  ].map(item => (
+                    <div
+                      key={item.key}
+                      className="flex items-center justify-between p-4 rounded-xl"
+                      style={{ background: 'rgba(255,255,255,0.05)' }}
+                    >
+                      <div className="flex items-center gap-3">
+                        <span className="text-xl">{item.icon}</span>
+                        <div>
+                          <div className="text-sm font-medium" style={{ color: '#fff' }}>{item.label}</div>
+                          <div className="text-xs" style={{ color: '#666' }}>{item.desc}</div>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => setStyleSettings({ ...styleSettings, [item.key]: !styleSettings[item.key as keyof typeof styleSettings] })}
+                        className="w-14 h-8 rounded-full transition-all relative"
+                        style={{
+                          background: styleSettings[item.key as keyof typeof styleSettings] ? '#f59e0b' : 'rgba(255,255,255,0.2)',
+                        }}
+                      >
+                        <div
+                          className="w-6 h-6 rounded-full absolute top-1 transition-all"
+                          style={{
+                            background: '#fff',
+                            left: styleSettings[item.key as keyof typeof styleSettings] ? '32px' : '4px',
+                          }}
+                        />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* 主题设置 */}
+              <div
+                className="p-6 rounded-2xl"
+                style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)' }}
+              >
+                <div className="flex items-center gap-2 mb-6">
+                  <span className="text-lg">🎨</span>
+                  <h3 className="text-base font-semibold" style={{ color: '#f59e0b' }}>主题风格</h3>
+                </div>
+                <div className="grid grid-cols-4 gap-3">
+                  {[
+                    { value: 'dark', label: '暗色系', color: '#1a1a2e' },
+                    { value: 'light', label: '亮色系', color: '#f0f0f0' },
+                    { value: 'pink', label: '粉色系', color: '#ff9a9e' },
+                    { value: 'blue', label: '蓝色系', color: '#667eea' },
+                  ].map(theme => (
+                    <button
+                      key={theme.value}
+                      className="py-3 rounded-xl text-xs font-medium transition-all"
+                      style={{
+                        background: 'rgba(255,255,255,0.08)',
+                        color: '#fff',
+                        border: '1px solid rgba(255,255,255,0.12)',
+                      }}
+                    >
+                      {theme.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* 关于 */}
+              <div
+                className="p-6 rounded-2xl"
+                style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }}
+              >
+                <h3 className="text-sm font-semibold mb-2" style={{ color: '#666' }}>关于</h3>
+                <p className="text-base" style={{ color: '#fff' }}>
+                  AI Companion <span style={{ color: '#f59e0b' }}>v0.3.0</span>
+                </p>
+                <p className="text-xs mt-1" style={{ color: '#555' }}>人格化 AI 桌面副官 · 全新设置界面</p>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
