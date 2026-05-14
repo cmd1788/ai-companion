@@ -823,9 +823,9 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   {[
+                    { value: 'minimax_mcp_bridge', label: '🔗 MiniMax MCP Bridge', desc: '通过 Hermes/OpenClaw 网关', color: '#22c55e' },
                     { value: 'mock', label: '🔮 Mock', desc: '测试模式，返回模拟数据', color: '#a855f7' },
-                    { value: 'minimax_mcp', label: '🤖 MiniMax MCP', desc: '使用 MiniMax 联网搜索', color: '#22c55e' },
-                    { value: 'fetch', label: '🌍 Browser', desc: '浏览器直接请求(可能CORS)', color: '#3b82f6' },
+                    { value: 'fetch', label: '🌍 Browser Fetch', desc: '浏览器直接请求(可能CORS)', color: '#3b82f6' },
                     { value: 'disabled', label: '❌ 禁用', desc: '关闭所有联网功能', color: '#ef4444' },
                   ].map(item => (
                     <button
@@ -845,8 +845,58 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
                 </div>
               </div>
 
+              {/* MCP Bridge 状态 */}
+              {networkSettings.provider === 'minimax_mcp_bridge' && (
+                <div
+                  className="p-6 rounded-2xl"
+                  style={{ background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.2)' }}
+                >
+                  <div className="flex items-center gap-2 mb-4">
+                    <span className="text-lg">🔗</span>
+                    <h3 className="text-base font-semibold" style={{ color: '#22c55e' }}>MCP Bridge 状态</h3>
+                  </div>
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <div 
+                          className="w-2 h-2 rounded-full"
+                          style={{ background: '#888' }}
+                        />
+                        <span className="text-xs" style={{ color: '#888' }}>[未连接]</span>
+                      </div>
+                      <button
+                        onClick={async () => {
+                          try {
+                            const result = await runtime.network.testBridge();
+                            if (result.ok) {
+                              alert(`Bridge 连接成功 (${result.latency}ms)`);
+                            } else {
+                              alert(`Bridge 连接失败: ${result.error}`);
+                            }
+                          } catch (e: any) {
+                            alert(`Bridge 测试错误: ${e.message}`);
+                          }
+                        }}
+                        className="px-4 py-2 rounded-lg text-sm font-medium transition-all"
+                        style={{ 
+                          background: 'rgba(34,197,94,0.2)',
+                          color: '#22c55e',
+                          border: '1px solid rgba(34,197,94,0.3)',
+                        }}
+                      >
+                        测试 Bridge
+                      </button>
+                    </div>
+                    <div className="text-xs p-3 rounded-lg" style={{ background: 'rgba(0,0,0,0.3)', color: '#888' }}>
+                      <div>网关地址: ws://localhost:8080/bridge</div>
+                      <div>HTTP: http://localhost:8080/bridge</div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* MiniMax API Key 设置 */}
-              {networkSettings.provider === 'minimax_mcp' && (
+              {networkSettings.provider === 'minimax_mcp_bridge' && (
                 <div
                   className="p-6 rounded-2xl"
                   style={{ background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.2)' }}
@@ -1043,8 +1093,12 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
                   onClick={async () => {
                     try {
                       const { runtime } = await import('./runtime/runtimeAdapter');
-                      const result = await runtime.network.search('AI最新新闻', { provider: networkSettings.provider });
-                      alert(`联网测试${result.ok ? '成功' : '失败'}!\n结果数: ${result.results?.length || 0}\n来源: ${result.source}${result.error ? '\n错误: ' + result.error : ''}`);
+                      const result = await runtime.network.testBridge();
+                      if (result.ok) {
+                        alert(`Bridge 连接成功 (${result.latency}ms)`);
+                      } else {
+                        alert(`Bridge 连接失败: ${result.error}`);
+                      }
                     } catch (e: any) {
                       alert('联网测试异常: ' + e.message);
                     }
@@ -1052,7 +1106,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
                   className="px-6 py-3 rounded-xl font-medium transition-all hover:opacity-80"
                   style={{ background: 'linear-gradient(135deg, #06b6d4, #0891b2)', color: 'white' }}
                 >
-                  🔍 测试搜索 "AI最新新闻"
+                  🔍 测试 MCP Bridge
                 </button>
               </div>
             </div>

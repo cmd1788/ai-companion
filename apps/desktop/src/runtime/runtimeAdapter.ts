@@ -4,6 +4,7 @@
 import type { RuntimeMode, RuntimeStatus, Message, MemoryItem, EmotionState, RuntimeStateExport, InvokeResult, NetworkProvider, NetworkSearchResponse, NetworkStatus } from './runtimeTypes';
 import { tauriAdapter } from './tauriAdapter';
 import { browserAdapter } from './browserAdapter';
+import { mcpBridge } from './mcpBridge';
 import { storageAdapter } from './storageAdapter';
 import { networkLog } from './networkLog';
 
@@ -298,14 +299,17 @@ async function networkSearch(
   }
   
   // Browser/Test 模式
-  if (provider === 'mock' || provider === 'fetch' || provider === 'minimax_mcp') {
+  if (provider === 'mock' || provider === 'fetch' || provider === 'minimax_mcp' || provider === 'minimax_mcp_bridge') {
     try {
       let response: NetworkSearchResponse;
       
       if (provider === 'mock') {
         response = await browserAdapter.network.search(query, provider, maxResults);
+      } else if (provider === 'minimax_mcp_bridge') {
+        // MiniMax MCP Bridge - 通过 Hermes/OpenClaw Gateway
+        response = await mcpBridge.search(query, { maxResults });
       } else if (provider === 'minimax_mcp') {
-        // MiniMax MCP 搜索 - 优先真实调用
+        // MiniMax MCP 直接模式
         response = await browserAdapter.network.searchMiniMaxMCP(query, provider, maxResults);
       } else {
         // fetch 模式，可能 CORS 失败
@@ -373,6 +377,11 @@ const networkAPI = {
   clearLogs: clearNetworkLogs,
   exportLogs: exportNetworkLogs,
   shouldTrigger: networkLog.shouldTriggerWebSearch,
+  // MCP Bridge 额外函数
+  testBridge: mcpBridge.test,
+  getBridgeStatus: mcpBridge.getStatus,
+  blockBridge: mcpBridge.block,
+  unblockBridge: mcpBridge.unblock,
 };
 
 // 统一 Runtime 对象
