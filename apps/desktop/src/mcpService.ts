@@ -1,7 +1,7 @@
 // MiniMax MCP服务 - AI自主调用
 import { invoke } from '@tauri-apps/api/core';
 
-const API_KEY = 'eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJtaW5pbWF4IiwicWEiOiIxMDI0NDIyNDY4NzkxMjQyOTM2NiIsImV4cCI6MTc4NTg3MzI1Nn0.gH-h9ZMrC1D1LqJa0o6X1yq7YvR5wQ8zKj9N5pL2mF4xQ6yB3cD8eE9fG1hH2iI3jJ4kK5lL6mM7nN8oO9pP0qQ1rR2sS3tT4uU5vV6wW7xX8yY9zZ';
+const API_KEY = 'sk-cp-eZ_KsU3aRH1rcNGPfFlBdIyFqLt4wfIZm9LgQ8dyHJEjUFXBwfqGjbK9Ne7sBIVGpoiR6okgH-SDRbSelgVtsNTaT3wUkTY5ox8TS-EWyRaDFc9a_uj1TKY';
 const VISION_API_URL = 'https://api.minimax.chat/v1/vision';
 const IMAGE_API_URL = 'https://api.minimax.chat/v1/image_generation';
 const TTS_API_URL = 'https://api.minimax.chat/v1/t2a_v2';
@@ -131,7 +131,7 @@ export async function textToSpeech(text: string, outputPath?: string): Promise<{
         'Authorization': `Bearer ${API_KEY}`,
       },
       body: JSON.stringify({
-        model: 'speech-02-hd',
+        model: 'speech-02-had',
         text: text,
         stream: false,
         voice_setting: {
