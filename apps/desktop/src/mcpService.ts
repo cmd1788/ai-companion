@@ -1,10 +1,21 @@
 // MiniMax MCP服务 - AI自主调用
-import { invoke } from '@tauri-apps/api/core';
+// 使用 Runtime Adapter 处理 Tauri 调用，不直接调用 invoke
 
-const API_KEY = 'sk-cp-eZ_KsU3aRH1rcNGPfFlBdIyFqLt4wfIZm9LgQ8dyHJEjUFXBwfqGjbK9Ne7sBIVGpoiR6okgH-SDRbSelgVtsNTaT3wUkTY5ox8TS-EWyRaDFc9a_uj1TKY';
+import { runtime } from './runtime/runtimeAdapter';
+
+const API_KEY = 'sk-cp-...1TKY';
 const VISION_API_URL = 'https://api.minimax.chat/v1/vision';
 const IMAGE_API_URL = 'https://api.minimax.chat/v1/image_generation';
 const TTS_API_URL = 'https://api.minimax.chat/v1/t2a_v2';
+
+// Base64转数组
+function arrayToBase64(bytes: Uint8Array): string {
+  let binary = '';
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
+}
 
 // 截图理解 - AI可以主动截屏并分析
 export async function analyzeScreen(imagePath?: string): Promise<string> {
@@ -12,12 +23,24 @@ export async function analyzeScreen(imagePath?: string): Promise<string> {
     let base64: string;
     
     if (imagePath) {
-      // 读取指定图片
-      const bytes: number[] = await invoke('read_file_base64', { path: imagePath });
-      base64 = arrayToBase64(new Uint8Array(bytes));
+      // 读取指定图片 - 通过 runtime
+      const result = await runtime.diagnostics.exportState?.() || {};
+      if (runtime.isTauri()) {
+        const readResult = await (await import('./runtime/tauriAdapter')).tauriAdapter.invokeSafe<number[]>('read_file_base64', { path: imagePath });
+        if (!readResult.ok) {
+          return `读取图片失败: ${readResult.error}`;
+        }
+        base64 = arrayToBase64(new Uint8Array(readResult.data!));
+      } else {
+        return '截图理解在浏览器模式下不可用';
+      }
     } else {
-      // 截取当前屏幕
-      base64 = await invoke('capture_screen');
+      // 截取当前屏幕 - 通过 runtime
+      const captureResult = await runtime.screen.capture();
+      if (!captureResult.ok) {
+        return `截屏失败: ${captureResult.error}`;
+      }
+      base64 = captureResult.data || '';
     }
     
     const response = await fetch(VISION_API_URL, {
@@ -56,15 +79,6 @@ export async function analyzeScreen(imagePath?: string): Promise<string> {
     console.error('[MCP] Vision error:', e);
     return `截图理解失败: ${e}`;
   }
-}
-
-// Base64转数组
-function arrayToBase64(bytes: Uint8Array): string {
-  let binary = '';
-  for (let i = 0; i < bytes.length; i++) {
-    binary += String.fromCharCode(bytes[i]);
-  }
-  return btoa(binary);
 }
 
 // 图片生成 - AI可以根据对话内容生成配图
@@ -106,11 +120,18 @@ export async function generateImage(prompt: string, outputPath?: string): Promis
     const imageBuffer = await imageResponse.arrayBuffer();
     const imageBytes = new Uint8Array(imageBuffer);
     
-    // 保存图片
-    await invoke('write_binary_file', { 
-      path: targetPath, 
-      data: Array.from(imageBytes) 
-    });
+    // 保存图片 - 通过 runtime
+    if (runtime.isTauri()) {
+      const writeResult = await (await import('./runtime/tauriAdapter')).tauriAdapter.invokeSafe<void>('write_binary_file', { 
+        path: targetPath, 
+        data: Array.from(imageBytes) 
+      });
+      if (!writeResult.ok) {
+        return { success: false, error: `保存失败: ${writeResult.error}` };
+      }
+    } else {
+      return { success: false, error: '图片保存在浏览器模式下不可用' };
+    }
     
     return { success: true, path: targetPath, url: imageUrl };
   } catch (e) {
@@ -155,11 +176,18 @@ export async function textToSpeech(text: string, outputPath?: string): Promise<{
     const audioBuffer = await response.arrayBuffer();
     const audioBytes = new Uint8Array(audioBuffer);
     
-    // 保存音频
-    await invoke('write_binary_file', { 
-      path: targetPath, 
-      data: Array.from(audioBytes) 
-    });
+    // 保存音频 - 通过 runtime
+    if (runtime.isTauri()) {
+      const writeResult = await (await import('./runtime/tauriAdapter')).tauriAdapter.invokeSafe<void>('write_binary_file', { 
+        path: targetPath, 
+        data: Array.from(audioBytes) 
+      });
+      if (!writeResult.ok) {
+        return { success: false, error: `保存失败: ${writeResult.error}` };
+      }
+    } else {
+      return { success: false, error: '语音保存在浏览器模式下不可用' };
+    }
     
     return { success: true, path: targetPath };
   } catch (e) {

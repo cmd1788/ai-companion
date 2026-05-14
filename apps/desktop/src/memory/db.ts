@@ -1,4 +1,9 @@
-import { invoke } from '@tauri-apps/api/core';
+// Memory/DB Layer - 使用 Runtime Adapter
+// 不直接调用 invoke，所有操作通过 runtime API
+// 支持 Tauri (SQLite) 和 Browser (localStorage) 模式
+
+import { runtime } from '../runtime/runtimeAdapter';
+import type { EmotionState } from '../runtime/runtimeTypes';
 
 export interface Message {
   id: number;
@@ -7,97 +12,78 @@ export interface Message {
   timestamp: number;
 }
 
-export interface EmotionState {
-  happiness: number;
-  fatigue: number;
-  loneliness: number;
-  stress: number;
-  affection: number;
-}
-
 export interface Memory {
   id: number;
   content: string;
   timestamp: number;
 }
 
+// 初始化数据库连接
 export async function initDatabase(): Promise<void> {
-  console.log('[DB] Using Rust SQLite backend');
-  try {
-    await invoke<string>('ping');
-  } catch (e) {
-    console.error('[DB] Ping error:', e);
-  }
+  console.log('[DB] Initializing with Runtime Adapter');
+  const status = await runtime.init();
+  console.log('[DB] Runtime mode:', status.mode, '| Storage:', status.storageBackend);
+  
+  // 诊断 ping
+  const pingResult = await runtime.diagnostics.ping();
+  console.log('[DB] Ping result:', pingResult);
 }
 
+// 保存消息
 export async function saveMessage(role: 'user' | 'assistant' | 'system', content: string): Promise<void> {
-  try {
-    await invoke<number>('save_message', { role, content });
-    console.log('[DB] Message saved');
-  } catch (e) {
-    console.error('[DB] save_message error:', e);
-    throw e;
+  const result = await runtime.messages.save(role, content);
+  if (result.ok) {
+    console.log('[DB] Message saved via runtime');
+  } else {
+    console.warn('[DB] saveMessage warning:', result.error);
   }
 }
 
+// 加载消息
 export async function loadMessages(limit = 50): Promise<Message[]> {
-  try {
-    const messages = await invoke<Message[]>('load_messages', { limit });
-    return messages;
-  } catch (e) {
-    console.error('[DB] load_messages error:', e);
-    return [];
-  }
+  const messages = await runtime.messages.load(limit);
+  return messages.map((m, i) => ({
+    id: i,
+    role: m.role,
+    content: m.content,
+    timestamp: m.timestamp,
+  }));
 }
 
+// 保存情绪
 export async function saveEmotion(state: EmotionState): Promise<void> {
-  try {
-    await invoke('save_emotion', {
-      happiness: state.happiness,
-      fatigue: state.fatigue,
-      loneliness: state.loneliness,
-      stress: state.stress,
-      affection: state.affection
-    });
-  } catch (e) {
-    console.error('[DB] save_emotion error:', e);
+  const result = await runtime.emotion.save(state);
+  if (!result.ok) {
+    console.warn('[DB] saveEmotion warning:', result.error);
   }
 }
 
+// 加载情绪
 export async function loadEmotion(): Promise<EmotionState | null> {
-  try {
-    return await invoke<EmotionState>('load_emotion');
-  } catch (e) {
-    console.error('[DB] load_emotion error:', e);
-    return null;
-  }
+  return await runtime.emotion.load();
 }
 
+// 清空消息
 export async function clearMessages(): Promise<void> {
-  try {
-    await invoke('clear_messages');
-  } catch (e) {
-    console.error('[DB] clear_messages error:', e);
-  }
+  await runtime.messages.clear();
 }
 
-// 记忆功能
+// 保存记忆
 export async function saveMemory(content: string): Promise<void> {
-  try {
-    await invoke<number>('save_memory', { content });
-    console.log('[DB] Memory saved:', content.substring(0, 30));
-  } catch (e) {
-    console.error('[DB] save_memory error:', e);
+  const result = await runtime.memories.save(content);
+  if (result.ok) {
+    console.log('[DB] Memory saved via runtime');
+  } else {
+    console.warn('[DB] saveMemory warning:', result.error);
   }
 }
 
+// 加载记忆
 export async function loadMemories(): Promise<Memory[]> {
-  try {
-    const memories = await invoke<Memory[]>('load_memories');
-    console.log('[DB] Loaded', memories.length, 'memories');
-    return memories;
-  } catch (e) {
-    console.error('[DB] load_memories error:', e);
-    return [];
-  }
+  const items = await runtime.memories.load();
+  return items.map((m, i) => ({
+    id: i,
+    content: m.content,
+    timestamp: m.timestamp,
+  }));
 }

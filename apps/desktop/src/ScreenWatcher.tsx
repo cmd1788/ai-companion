@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react';
-import { invoke } from '@tauri-apps/api/core';
 import { useAppStore } from './store';
+import { runtime } from './runtime/runtimeAdapter';
 
 // MiniMax TTS API - 生成语音并播放
 let audioCache: Map<string, string> = new Map(); // text -> base64 audio
@@ -42,10 +42,7 @@ async function speakWithMiniMax(text: string): Promise<void> {
     const data = await response.json();
     console.log('[TTS] Response:', JSON.stringify(data).substring(0, 100));
 
-    // MiniMax TTS 返回的是音频二进制，需要处理
-    // 检查返回的数据结构
     if (data.data) {
-      // 可能是 base64 编码的音频
       const audioBase64 = data.data;
       audioCache.set(text, audioBase64);
       await playAudio(audioBase64);
@@ -59,7 +56,6 @@ async function speakWithMiniMax(text: string): Promise<void> {
 
 async function playAudio(base64Audio: string): Promise<void> {
   try {
-    // 转换base64为Blob并播放
     const audioData = atob(base64Audio);
     const audioArray = new Uint8Array(audioData.length);
     for (let i = 0; i < audioData.length; i++) {
@@ -148,7 +144,6 @@ function updateEmotionFromMessage(emotion: AppState['emotion'], message: string,
   const newEmotion = { ...emotion };
   
   if (isUser) {
-    // 用户消息检测
     if (message.includes('喜欢') || message.includes('爱你') || message.includes('棒')) {
       newEmotion.affection = Math.min(100, emotion.affection + 5);
       newEmotion.happiness = Math.min(100, emotion.happiness + 3);
@@ -160,7 +155,6 @@ function updateEmotionFromMessage(emotion: AppState['emotion'], message: string,
       newEmotion.loneliness = Math.min(100, emotion.loneliness + 5);
     }
   } else {
-    // AI回复检测
     if (message.includes('~') || message.includes('！') || message.includes('🥰')) {
       newEmotion.happiness = Math.min(100, emotion.happiness + 2);
     }
@@ -183,7 +177,6 @@ export function ScreenWatcher() {
   const silenceCountRef = useRef(0);
   const { addMessage, setEmotion, emotion, messages, styleSettings, systemSettings } = useAppStore();
 
-  // 根据速度调整基础概率
   const getBaseInterval = () => {
     switch (systemSettings.autoReplySpeed) {
       case 'slow': return 60;
@@ -199,14 +192,23 @@ export function ScreenWatcher() {
 
     const timer = setInterval(async () => {
       try {
-        // 截屏
-        const screenshot: string = await invoke('capture_screen');
+        // 使用 Runtime Adapter 截屏（不直接调用 invoke）
+        const result = await runtime.screen.capture();
+        
+        if (!result.ok) {
+          // Browser 模式下截屏不可用是预期的，不打印错误
+          if (runtime.isTauri()) {
+            console.warn('[ScreenWatcher] capture failed:', result.error);
+          }
+          return;
+        }
+        
+        const screenshot = result.data || '';
         if (screenshot === lastScreenshotRef.current) {
           return;
         }
         lastScreenshotRef.current = screenshot;
 
-        // 检测用户活动
         silenceCountRef.current = 0;
 
         // 30%概率发送主动消息
@@ -219,7 +221,6 @@ export function ScreenWatcher() {
             // TTS朗读（注释掉避免频繁触发）
             // await speakWithMiniMax(proactiveMsg);
             
-            // 更新情绪
             const newEmotion = updateEmotionFromMessage(emotion, proactiveMsg, false);
             setEmotion(newEmotion);
           }

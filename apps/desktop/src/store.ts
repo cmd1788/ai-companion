@@ -102,26 +102,63 @@ const REAL_API_KEY = 'sk-cp-eZ_KsU3aRH1rcNGPfFlBdIyFqLt4wfIZm9LgQ8dyHJEjUFXBwfqG
 
 // 情绪关键词检测
 function analyzeSentiment(text: string): { keyword: string; delta: Partial<EmotionState>; expression: string } | null {
-  const positive = ['喜欢', '爱你', '棒', '好棒', '厉害', '谢谢', '开心', '高兴', '么么哒', '乖'];
-  const negative = ['滚', '讨厌', '烦', '无聊', '累', '困', '难过', '伤心', '生气'];
-  const affectionate = ['宝贝', '亲爱的', '小伊', '乖', '抱抱', '摸摸'];
-  const lonely = ['没人', '寂寞', '孤独', '一个人', '没人理', '好无聊'];
-  const stressed = ['压力', '焦虑', '担心', '害怕', '紧张'];
+  const lowerText = text.toLowerCase();
+  
+  // 开心/愉悦类
+  const positive = [
+    '开心', '高兴', '快乐', '愉快', '爽', '棒', '好棒', '厉害', '谢谢', '感谢',
+    '喜欢', '爱你', '么么哒', '乖', '可爱', '哈哈', '嘻嘻', '笑', '真好',
+    '特别开心', '超开心', '非常开心', '太开心', '好开心', '特别高兴'
+  ];
+  
+  // 难过/伤心类
+  const negative = [
+    '滚', '讨厌', '烦', '无聊', '累', '困', '难过', '伤心', '生气', '不爽',
+    '悲伤', '痛苦', '失落', '沮丧', '郁闷', '委屈', '难过', '好难过', '太难过了',
+    '不开心', '不高兴', '不快乐'
+  ];
+  
+  // 亲密/喜爱类
+  const affectionate = [
+    '宝贝', '亲爱的', '小伊', '乖', '抱抱', '摸摸', '想你', '想你了', '想念',
+    '爱你', '喜欢你', '喜欢你', '心肝', '甜心', '宝贝儿', '亲亲', '么么'
+  ];
+  
+  // 孤独/寂寞类
+  const lonely = [
+    '没人', '寂寞', '孤独', '一个人', '没人理', '好无聊', '无聊', '孤单',
+    '没人陪', '自己一个人', '冷冷清清'
+  ];
+  
+  // 压力/焦虑类
+  const stressed = [
+    '压力', '焦虑', '担心', '害怕', '紧张', '不安', '压力好大', '压力很大',
+    '焦虑', '好焦虑', '担心', '好担心', '紧张', '好紧张', '害怕', '好害怕'
+  ];
+  
+  // 疲惫类
+  const tired = [
+    '累', '困', '疲惫', '疲劳', '累死了', '好累', '太累了', '困了', '好困',
+    '想睡觉', '睡', '休息', '疲惫不堪'
+  ];
 
   for (const kw of positive) {
-    if (text.includes(kw)) return { keyword: kw, delta: { happiness: 5, affection: 3 }, expression: '01_happy' };
+    if (lowerText.includes(kw)) return { keyword: kw, delta: { happiness: 5, affection: 3 }, expression: '01_happy' };
   }
   for (const kw of negative) {
-    if (text.includes(kw)) return { keyword: kw, delta: { happiness: -5, stress: 3 }, expression: '02_angry' };
+    if (lowerText.includes(kw)) return { keyword: kw, delta: { happiness: -5, stress: 3 }, expression: '02_angry' };
   }
   for (const kw of affectionate) {
-    if (text.includes(kw)) return { keyword: kw, delta: { affection: 5 }, expression: '20_love' };
+    if (lowerText.includes(kw)) return { keyword: kw, delta: { affection: 5, happiness: 2 }, expression: '20_love' };
   }
   for (const kw of lonely) {
-    if (text.includes(kw)) return { keyword: kw, delta: { loneliness: 5 }, expression: '03_sad' };
+    if (lowerText.includes(kw)) return { keyword: kw, delta: { loneliness: 5, happiness: -2 }, expression: '03_sad' };
   }
   for (const kw of stressed) {
-    if (text.includes(kw)) return { keyword: kw, delta: { stress: 5, fatigue: 3 }, expression: '14_scared' };
+    if (lowerText.includes(kw)) return { keyword: kw, delta: { stress: 5, fatigue: 3 }, expression: '14_scared' };
+  }
+  for (const kw of tired) {
+    if (lowerText.includes(kw)) return { keyword: kw, delta: { fatigue: 5 }, expression: '07_sleepy' };
   }
   return null;
 }

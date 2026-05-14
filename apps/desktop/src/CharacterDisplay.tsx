@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useAppStore } from './store';
-import { invoke } from '@tauri-apps/api/core';
+import { runtime } from './runtime/runtimeAdapter';
 
 // 表情图片映射
 const EXPRESSION_MAP: Record<string, string> = {
@@ -28,10 +28,10 @@ const EXPRESSION_MAP: Record<string, string> = {
 
 // 场景表情
 const SCENE_EXPRESSIONS = {
-  speaking: '11_excited',      // 说话时
-  thinking: '19_focused',      // 思考时
-  idle: '12_cold',            // 空闲时
-  greeting: '01_happy',       // 问候时
+  speaking: '11_excited',
+  thinking: '19_focused',
+  idle: '12_cold',
+  greeting: '01_happy',
 };
 
 // 安全的 base64 编码函数
@@ -71,7 +71,7 @@ export function CharacterDisplay() {
     return SCENE_EXPRESSIONS[state as keyof typeof SCENE_EXPRESSIONS] || '12_cold';
   }, []);
 
-  // 加载用户照片列表
+  // 加载用户照片列表 - 使用 runtime adapter
   useEffect(() => {
     async function loadPhotoList() {
       if (!photoPath) {
@@ -80,10 +80,24 @@ export function CharacterDisplay() {
       }
 
       try {
-        const files: string[] = await invoke('read_photo_dir', { path: photoPath });
-        setPhotoFiles(files.slice(0, 20));
+        if (runtime.isTauri()) {
+          // Tauri 模式：使用 invoke 读取目录
+          const { tauriAdapter } = await import('./runtime/tauriAdapter');
+          const result = await tauriAdapter.readPhotoDir(photoPath);
+          if (result.ok && result.data) {
+            setPhotoFiles(result.data.slice(0, 20));
+          } else {
+            console.warn('[CharacterDisplay] read_photo_dir failed:', result.error);
+            setPhotoFiles([]);
+          }
+        } else {
+          // Browser 模式：照片目录不可用
+          console.log('[CharacterDisplay] Photo dir not available in browser mode');
+          setPhotoFiles([]);
+        }
       } catch (e) {
         console.error('[CharacterDisplay] Failed to load photo list:', e);
+        setPhotoFiles([]);
       } finally {
         setIsLoading(false);
       }
@@ -92,7 +106,7 @@ export function CharacterDisplay() {
     loadPhotoList();
   }, [photoPath]);
 
-  // 加载当前用户照片
+  // 加载当前用户照片 - 使用 runtime adapter
   useEffect(() => {
     async function loadCurrentPhoto() {
       if (photoFiles.length === 0 || !showUserPhotos) return;
@@ -107,20 +121,30 @@ export function CharacterDisplay() {
       }
 
       try {
-        const bytes: number[] = await invoke('read_file_base64', { path: fullPath });
-        if (!bytes || bytes.length === 0) return;
+        if (runtime.isTauri()) {
+          // Tauri 模式：使用 invoke 读取文件
+          const { tauriAdapter } = await import('./runtime/tauriAdapter');
+          const result = await tauriAdapter.readFileBase64(fullPath);
+          if (!result.ok || !result.data || result.data.length === 0) {
+            console.warn('[CharacterDisplay] read_file_base64 failed:', result.error);
+            return;
+          }
 
-        const uint8Array = new Uint8Array(bytes);
-        let mimeType = 'image/jpeg';
-        const lower = file.toLowerCase();
-        if (lower.endsWith('.png')) mimeType = 'image/png';
-        else if (lower.endsWith('.webp')) mimeType = 'image/webp';
+          const uint8Array = new Uint8Array(result.data);
+          let mimeType = 'image/jpeg';
+          const lower = file.toLowerCase();
+          if (lower.endsWith('.png')) mimeType = 'image/png';
+          else if (lower.endsWith('.webp')) mimeType = 'image/webp';
 
-        const base64 = toBase64(uint8Array);
-        const dataUrl = `data:${mimeType};base64,${base64}`;
+          const base64 = toBase64(uint8Array);
+          const dataUrl = `data:${mimeType};base64,${base64}`;
 
-        loadedPhotosRef.current.set(fullPath, dataUrl);
-        setCurrentPhotoUrl(dataUrl);
+          loadedPhotosRef.current.set(fullPath, dataUrl);
+          setCurrentPhotoUrl(dataUrl);
+        } else {
+          // Browser 模式：无法读取本地文件
+          console.log('[CharacterDisplay] File read not available in browser mode');
+        }
       } catch (e) {
         console.error('[CharacterDisplay] Failed to load photo:', e);
       }
@@ -158,13 +182,10 @@ export function CharacterDisplay() {
   // 点击切换：显示用户照片或切换表情
   const handleClick = useCallback(() => {
     if (showUserPhotos && photoFiles.length > 1) {
-      // 在用户照片模式下切换下一张
       setPhotoIndex(prev => (prev + 1) % photoFiles.length);
     } else if (showUserPhotos) {
-      // 退出用户照片模式
       setShowUserPhotos(false);
     } else {
-      // 进入用户照片模式
       if (photoFiles.length > 0) {
         setShowUserPhotos(true);
         setPhotoIndex(0);
@@ -199,7 +220,6 @@ export function CharacterDisplay() {
     >
       <div className="relative" style={{ width: 280, height: 280 }}>
         {showUserPhotos ? (
-          // 用户照片模式 - 显示用户设置的照片
           <>
             {currentPhotoUrl ? (
               <img
@@ -212,7 +232,7 @@ export function CharacterDisplay() {
               />
             ) : (
               <div className="w-full h-full flex items-center justify-center bg-white/10 rounded-lg">
-                <span className="text-white/50">加载中...</span>
+                <span className="text-white/50">照片在浏览器模式下不可用</span>
               </div>
             )}
             {/* 用户照片指示器 */}
@@ -233,7 +253,6 @@ export function CharacterDisplay() {
             </div>
           </>
         ) : (
-          // 表情模式 - 显示内置表情图片
           <>
             <img
               src={expressionSrc}

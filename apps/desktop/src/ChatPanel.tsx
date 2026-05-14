@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useAppStore } from './store';
 import { analyzeScreen, generateImage, textToSpeech } from './mcpService';
+import { onUserMessage } from './proactiveChat';
 
 const API_BASE = 'https://api.minimax.chat';
 const MODEL = 'MiniMax-M2.7-highspeed';
@@ -241,6 +242,8 @@ export function ChatPanel() {
     const userMessage = input.trim();
     console.log('[ChatPanel] Sending:', userMessage);
     setInput('');
+    // 记录用户发消息时间，用于主动聊天冷却
+    onUserMessage();
     await addMessage({ role: 'user', content: userMessage });
     setIsLoading(true);
     setIsAITyping(true);
