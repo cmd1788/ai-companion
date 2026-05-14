@@ -60,6 +60,7 @@ interface AppState {
   character: CharacterProfile;
   emotion: EmotionState;
   characterState: string;
+  currentExpression: string;  // 当前表情图片
   messages: Array<{role: string; content: string}>;
   memories: Memory[];
   isSettingsOpen: boolean;
@@ -75,6 +76,7 @@ interface AppState {
   setSystemSettings: (settings: SystemSettings) => void;
   setCharacterSettings: (settings: CharacterSettings) => void;
   setCharacter: (character: CharacterProfile) => void;
+  setCurrentExpression: (expression: string) => void;
   initDB: () => Promise<void>;
   setEmotion: (emotion: EmotionState) => void;
   setCharacterState: (state: string) => void;
@@ -98,7 +100,7 @@ const DEFAULT_EMOTION: EmotionState = {
 const REAL_API_KEY = 'sk-cp-eZ_KsU3aRH1rcNGPfFlBdIyFqLt4wfIZm9LgQ8dyHJEjUFXBwfqGjbK9Ne7sBIVGpoiR6okgH-SDRbSelgVtsNTaT3wUkTY5ox8TS-EWyRaDFc9a_uj1TKY';
 
 // 情绪关键词检测
-function analyzeSentiment(text: string): { keyword: string; delta: Partial<EmotionState> } | null {
+function analyzeSentiment(text: string): { keyword: string; delta: Partial<EmotionState>; expression: string } | null {
   const positive = ['喜欢', '爱你', '棒', '好棒', '厉害', '谢谢', '开心', '高兴', '么么哒', '乖'];
   const negative = ['滚', '讨厌', '烦', '无聊', '累', '困', '难过', '伤心', '生气'];
   const affectionate = ['宝贝', '亲爱的', '小伊', '乖', '抱抱', '摸摸'];
@@ -106,21 +108,42 @@ function analyzeSentiment(text: string): { keyword: string; delta: Partial<Emoti
   const stressed = ['压力', '焦虑', '担心', '害怕', '紧张'];
 
   for (const kw of positive) {
-    if (text.includes(kw)) return { keyword: kw, delta: { happiness: 5, affection: 3 } };
+    if (text.includes(kw)) return { keyword: kw, delta: { happiness: 5, affection: 3 }, expression: '01_happy' };
   }
   for (const kw of negative) {
-    if (text.includes(kw)) return { keyword: kw, delta: { happiness: -5, stress: 3 } };
+    if (text.includes(kw)) return { keyword: kw, delta: { happiness: -5, stress: 3 }, expression: '02_angry' };
   }
   for (const kw of affectionate) {
-    if (text.includes(kw)) return { keyword: kw, delta: { affection: 5 } };
+    if (text.includes(kw)) return { keyword: kw, delta: { affection: 5 }, expression: '20_love' };
   }
   for (const kw of lonely) {
-    if (text.includes(kw)) return { keyword: kw, delta: { loneliness: 5 } };
+    if (text.includes(kw)) return { keyword: kw, delta: { loneliness: 5 }, expression: '03_sad' };
   }
   for (const kw of stressed) {
-    if (text.includes(kw)) return { keyword: kw, delta: { stress: 5, fatigue: 3 } };
+    if (text.includes(kw)) return { keyword: kw, delta: { stress: 5, fatigue: 3 }, expression: '14_scared' };
   }
   return null;
+}
+
+// 根据情绪状态计算表情
+function getExpressionFromEmotion(emotion: EmotionState): string {
+  const { happiness, fatigue, loneliness, stress, affection } = emotion;
+  
+  // 高疲劳-困倦
+  if (fatigue > 60) return '07_sleepy';
+  // 高压力/害怕
+  if (stress > 50) return '14_scared';
+  // 高孤独
+  if (loneliness > 60) return '03_sad';
+  // 高喜悦/喜爱
+  if (happiness > 80 && affection > 60) return '20_love';
+  if (happiness > 70) return '11_excited';
+  // 中等喜悦
+  if (happiness > 50) return '01_happy';
+  // 负情绪
+  if (happiness < 30) return '10_disappointed';
+  // 默认平静
+  return '12_cold';
 }
 
 // 从用户消息中提取记忆（不包含AI回复）
@@ -156,6 +179,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   emotion: { ...DEFAULT_EMOTION },
   characterState: 'idle',
+  currentExpression: '01_happy',
   messages: [],
   memories: [],
   isSettingsOpen: false,
@@ -201,6 +225,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   setSystemSettings: (systemSettings) => set({ systemSettings }),
   setCharacterSettings: (characterSettings) => set({ characterSettings }),
   setCharacter: (character) => set({ character }),
+  setCurrentExpression: (expression) => set({ currentExpression: expression }),
 
   initDB: async () => {
     console.log('[Store] initDB called');
@@ -264,9 +289,12 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     // 分析用户消息情感
     const userSentiment = analyzeSentiment(userMessage);
+    let newExpression = state.currentExpression;
+    
     if (userSentiment) {
       Object.assign(newEmotion, userSentiment.delta);
-      console.log('[Store] User sentiment:', userSentiment.keyword);
+      newExpression = userSentiment.expression;
+      console.log('[Store] User sentiment:', userSentiment.keyword, '-> expression:', newExpression);
     }
 
     // 分析AI回复情感
@@ -283,7 +311,12 @@ export const useAppStore = create<AppState>((set, get) => ({
     newEmotion.happiness = Math.max(0, Math.min(100, newEmotion.happiness));
     newEmotion.affection = Math.max(0, Math.min(100, newEmotion.affection));
 
-    set({ emotion: newEmotion });
+    // 根据情绪状态更新表情（如果没有从关键词匹配）
+    if (newExpression === state.currentExpression) {
+      newExpression = getExpressionFromEmotion(newEmotion);
+    }
+
+    set({ emotion: newEmotion, currentExpression: newExpression });
     saveEmotion(newEmotion);
 
     // 提取并保存记忆（只从用户消息提取）
