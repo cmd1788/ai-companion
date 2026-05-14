@@ -867,6 +867,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
                       <button
                         onClick={async () => {
                           try {
+                            const { runtime } = await import('./runtime/runtimeAdapter');
                             const result = await runtime.network.testBridge();
                             if (result.ok) {
                               alert(`Bridge 连接成功 (${result.latency}ms)`);
@@ -888,8 +889,8 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
                       </button>
                     </div>
                     <div className="text-xs p-3 rounded-lg" style={{ background: 'rgba(0,0,0,0.3)', color: '#888' }}>
-                      <div>OpenClaw 网关: ws://localhost:18789</div>
-                      <div>HTTP: http://localhost:18789</div>
+                      <div>OpenClaw 网关: ws://127.0.0.1:18789</div>
+                      <div>HTTP: http://127.0.0.1:18789</div>
                     </div>
                   </div>
                 </div>

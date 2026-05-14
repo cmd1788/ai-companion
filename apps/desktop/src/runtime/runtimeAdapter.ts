@@ -301,10 +301,10 @@ async function networkSearch(
   }
   
   // Browser/Test 模式 - 根据 provider 路由到不同 Runtime
-  if (provider === 'mock' || provider === 'fetch' || provider === 'minimax_agent' || provider === 'github_api') {
+  if (provider === 'mock' || provider === 'fetch' || provider === 'minimax_agent' || provider === 'github_api' || provider === 'minimax' || provider === 'minimax_mcp_bridge') {
     try {
       let response: NetworkSearchResponse;
-      
+
       if (provider === 'mock') {
         response = await browserAdapter.network.search(query, provider, maxResults);
       } else if (provider === 'github_api') {
@@ -332,8 +332,9 @@ async function networkSearch(
             degraded: true,
           };
         }
-      } else if (provider === 'minimax_agent') {
-        // MiniMax Agent Runtime
+      } else if (provider === 'minimax_agent' || provider === 'minimax' || provider === 'minimax_mcp_bridge') {
+        // MiniMax Agent / MCP Bridge Runtime - 通过 Hermes/OpenClaw Gateway
+        console.log(`[Runtime.network] Using minimax agent for search, provider=${provider}`);
         const result = await agentRuntime.minimax.search(query, { maxResults });
         if (result.ok && result.data) {
           response = {
@@ -352,9 +353,6 @@ async function networkSearch(
             degraded: true,
           };
         }
-      } else if (provider === 'minimax_mcp_bridge') {
-        // MiniMax MCP Bridge - 通过 Hermes/OpenClaw Gateway
-        response = await mcpBridge.search(query, { maxResults });
       } else {
         // fetch 模式，可能 CORS 失败
         response = await browserAdapter.network.searchFetch(query, provider, maxResults);

@@ -17,6 +17,14 @@ export async function ping(): Promise<InvokeResult<string>> {
   return invokeSafe<string>('ping');
 }
 
+export async function getEnv(name: string): Promise<InvokeResult<string>> {
+  return invokeSafe<string>('get_env', { name });
+}
+
+export async function fetchUrl(url: string): Promise<InvokeResult<string>> {
+  return invokeSafe<string>('fetch_url', { url });
+}
+
 export async function saveMessage(role: string, content: string): Promise<InvokeResult<number>> {
   return invokeSafe<number>('save_message', { role, content });
 }
@@ -47,6 +55,10 @@ export async function loadMemories(): Promise<InvokeResult<any[]>> {
 
 export async function captureScreen(): Promise<InvokeResult<string>> {
   return invokeSafe<string>('capture_screen');
+}
+
+export async function readPhotoDir(path: string): Promise<InvokeResult<string[]>> {
+  return invokeSafe<string[]>('read_photo_dir', { path });
 }
 
 export async function readFileBase64(path: string): Promise<InvokeResult<number[]>> {
@@ -109,15 +121,6 @@ export async function webSearch(query: string, apiKey?: string): Promise<InvokeR
       degraded: true,
     };
   }
-}
-
-export async function fetchUrl(url: string): Promise<InvokeResult<any>> {
-  return {
-    ok: false,
-    error: 'BLOCKED: Rust fetch_url command not implemented',
-    command: 'fetch_url',
-    degraded: true,
-  };
 }
 
 export const tauriAdapter = {

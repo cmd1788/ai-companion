@@ -2,14 +2,10 @@
 // 走 REST API，不走 MCP
 
 import type { ApiResult, GitHubUser, GitHubRepo, GitHubSearchResult, GitHubReadme, ApiLogEntry } from './apiTypes';
+import { tauriAdapter } from '../tauriAdapter';
 
-// 从环境变量或设置获取 Token
+// 从 localStorage 获取 Token（同步）
 function getToken(): string {
-  // 尝试从环境变量获取
-  const envToken = (typeof process !== 'undefined' && process.env?.GITHUB_MCP_TOKEN) as string | undefined;
-  if (envToken) return envToken;
-  
-  // 尝试从 localStorage 获取
   try {
     const settings = localStorage.getItem('ai_companion_settings');
     if (settings) {
@@ -17,7 +13,26 @@ function getToken(): string {
       return parsed.githubToken || '';
     }
   } catch {}
-  
+  return '';
+}
+
+// 异步获取 Token - 优先从 Tauri 环境变量获取
+async function getTokenAsync(): Promise<string> {
+  // 1. 先尝试 localStorage
+  try {
+    const settings = localStorage.getItem('ai_companion_settings');
+    if (settings) {
+      const parsed = JSON.parse(settings);
+      if (parsed.githubToken) return parsed.githubToken;
+    }
+  } catch {}
+
+  // 2. 尝试通过 Tauri command 获取环境变量
+  try {
+    const result = await tauriAdapter.getEnv('GITHUB_MCP_TOKEN');
+    if (result.ok && result.data) return result.data;
+  } catch {}
+
   return '';
 }
 
@@ -52,7 +67,7 @@ function clearApiLogs() {
 
 // 统一请求方法
 async function apiRequest<T>(endpoint: string, options?: RequestInit): Promise<ApiResult<T>> {
-  const token = getToken();
+  const token = await getTokenAsync();
   const maskedToken = getMaskedToken(token);
   const startTime = Date.now();
   
@@ -193,7 +208,11 @@ export const githubApi = {
   isConfigured: (): boolean => {
     return getToken().length > 0;
   },
+  isConfiguredAsync: async (): Promise<boolean> => {
+    return (await getTokenAsync()).length > 0;
+  },
   getMaskedToken,
+  getTokenAsync,
 };
 
 // API Runtime 导出

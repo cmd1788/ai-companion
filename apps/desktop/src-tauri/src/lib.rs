@@ -406,6 +406,28 @@ struct SearchResponse {
 }
 
 #[tauri::command]
+fn get_env(name: String) -> Result<String, String> {
+    log::info!("[get_env] Getting env: {}", name);
+    std::env::var(&name).map_err(|e| format!("Env {} not found: {}", name, e))
+}
+
+#[tauri::command]
+async fn fetch_url(url: String) -> Result<String, String> {
+    log::info!("[fetch_url] Fetching: {}", url);
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(5))
+        .build()
+        .map_err(|e| format!("Client error: {}", e))?;
+    client.get(&url)
+        .send()
+        .await
+        .map_err(|e| format!("Request error: {}", e))?
+        .text()
+        .await
+        .map_err(|e| format!("Read error: {}", e))
+}
+
+#[tauri::command]
 async fn web_search(query: String, api_key: Option<String>) -> Result<SearchResponse, String> {
     log::info!("[WebSearch] Searching for: {}", query);
     
@@ -571,6 +593,8 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            get_env,
+            fetch_url,
             ping,
             save_message,
             load_messages,

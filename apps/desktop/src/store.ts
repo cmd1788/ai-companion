@@ -59,7 +59,7 @@ interface CharacterSettings {
 // 联网设置接口
 interface NetworkSettings {
   enableWebSearch: boolean;     // 开启联网搜索
-  provider: 'minimax' | 'fetch' | 'mock' | 'disabled';  // 联网供应商
+  provider: 'minimax' | 'fetch' | 'mock' | 'disabled' | 'minimax_mcp_bridge' | 'minimax_agent' | 'github_api';  // 联网供应商
   maxResults: number;           // 搜索结果数量
   autoSummarize: boolean;       // 自动总结网页
   enableNetworkLogs: boolean;   // 网络请求日志开关

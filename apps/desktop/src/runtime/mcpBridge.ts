@@ -250,21 +250,26 @@ async function testBridge(): Promise<{ ok: boolean; error?: string; latency?: nu
   const start = Date.now();
 
   try {
-    // 尝试 HTTP 健康检查
-    const response = await fetch(`${BRIDGE_CONFIG.httpUrl}/health`, {
-      method: 'GET',
-      timeout: 3000,
-    });
+    // 尝试通过 Tauri command 访问 Gateway (绕过 CORS)
+    const { tauriAdapter } = await import('./tauriAdapter');
+    const result = await tauriAdapter.fetchUrl('http://127.0.0.1:18789/health');
 
     const latency = Date.now() - start;
 
-    if (response.ok) {
-      setBridgeStatus('connected');
-      return { ok: true, latency };
+    if (result.ok && result.data) {
+      try {
+        const data = JSON.parse(result.data);
+        if (data.ok === true) {
+          setBridgeStatus('connected');
+          return { ok: true, latency };
+        }
+      } catch {
+        // response 不是 JSON
+      }
     }
 
-    setBridgeStatus('blocked', `HTTP ${response.status}`);
-    return { ok: false, error: `HTTP ${response.status}` };
+    setBridgeStatus('blocked', result.error || 'Unknown error');
+    return { ok: false, error: result.error || 'GATEWAY_CORS_BLOCKED' };
   } catch (e: any) {
     const latency = Date.now() - start;
     setBridgeStatus('disconnected', e.message);
