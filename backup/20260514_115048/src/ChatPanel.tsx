@@ -172,9 +172,6 @@ export function ChatPanel() {
     const data = await response.json();
     const choice = data.choices?.[0];
     
-    // 兼容处理：content为空时使用reasoning_content
-    let replyContent = choice?.message?.content || choice?.message?.reasoning_content || '';
-    
     // 检查是否有工具调用
     if (choice?.finish_reason === 'tool_calls' || choice?.message?.tool_calls) {
       const toolCalls = choice.message.tool_calls;
@@ -227,12 +224,10 @@ export function ChatPanel() {
       });
       
       const finalData = await finalResponse.json();
-      const finalChoice = finalData.choices?.[0];
-      const finalContent = finalChoice?.message?.content || finalChoice?.message?.reasoning_content || '工具执行完成~';
-      return finalContent;
+      return finalData.choices?.[0]?.message?.content || '工具执行完成~';
     }
     
-    return replyContent || '抱歉，小伊不知道怎么回答~';
+    return choice?.message?.content || '抱歉，小伊不知道怎么回答~';
   };
 
   const handleSend = async () => {

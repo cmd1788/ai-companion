@@ -200,7 +200,7 @@ export function ScreenWatcher() {
     const timer = setInterval(async () => {
       try {
         // 截屏
-        const screenshot: string = await invoke('capture_screen');
+        const screenshot: string = await invoke('take_screenshot');
         if (screenshot === lastScreenshotRef.current) {
           return;
         }
