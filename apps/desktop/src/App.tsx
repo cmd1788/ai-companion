@@ -20,8 +20,8 @@ export default function App() {
       <div
         className="relative flex flex-col h-full select-none items-center justify-center"
         style={{
-          width: 416,
-          height: 559,
+          width: '100%',
+          height: '100%',
           background: 'linear-gradient(180deg, #1a1a2e 0%, #16213e 100%)',
         }}
       >
@@ -36,8 +36,8 @@ export default function App() {
       <div
         className="relative flex flex-col h-full select-none"
         style={{
-          width: 416,
-          height: 559,
+          width: '100%',
+          height: '100%',
           background: 'linear-gradient(180deg, #1a1a2e 0%, #16213e 100%)',
           borderRadius: 0,
         }}
@@ -51,8 +51,8 @@ export default function App() {
     <div
       className="relative flex flex-col h-full select-none"
       style={{
-        width: 416,
-        height: 559,
+        width: '100%',
+        height: '100%',
         background: 'linear-gradient(180deg, #1a1a2e 0%, #16213e 100%)',
         borderRadius: 0,
       }}
@@ -76,7 +76,7 @@ export default function App() {
 
         {/* 角色展示 */}
         {styleSettings.showCharacter && (
-          <div className="flex-shrink-0" style={{ height: 300 }}>
+          <div className="flex-shrink-0" style={{ height: '40%', minHeight: 200 }}>
             <CharacterDisplay />
           </div>
         )}
