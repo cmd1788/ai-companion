@@ -65,10 +65,10 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
   };
 
   const tabs = [
-    { key: 'character' as const, label: '人物设定', color: '#e94560' },
-    { key: 'system' as const, label: '系统设定', color: '#3b82f6' },
-    { key: 'model' as const, label: '模型设置', color: '#22c55e' },
-    { key: 'style' as const, label: '风格页面', color: '#f59e0b' },
+    { key: 'character' as const, label: '👤 人物设定', color: '#e94560' },
+    { key: 'system' as const, label: '⚙️ 系统设定', color: '#3b82f6' },
+    { key: 'model' as const, label: '🤖 模型设置', color: '#22c55e' },
+    { key: 'style' as const, label: '🎨 风格页面', color: '#f59e0b' },
   ];
 
   return (
@@ -182,46 +182,21 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
                 className="w-full px-4 py-3 rounded-xl text-sm"
                 style={{ background: 'rgba(255,255,255,0.1)', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' }}
               />
+              <p className="text-xs mt-2" style={{ color: '#888' }}>设置为包含角色立绘的文件夹路径</p>
             </div>
 
-            {/* Memory Days */}
+            {/* Custom Description */}
             <div className="p-5 rounded-2xl" style={{ background: 'rgba(233,69,96,0.1)', border: '1px solid rgba(233,69,96,0.2)' }}>
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="text-sm font-semibold" style={{ color: '#e94560' }}>记忆保存天数</h3>
-                <span className="text-lg font-bold" style={{ color: '#e94560' }}>{systemSettings.memoryDays}天</span>
-              </div>
-              <input
-                type="range"
-                min="7"
-                max="90"
-                step="1"
-                value={systemSettings.memoryDays}
-                onChange={(e) => setSystemSettings({ ...systemSettings, memoryDays: parseInt(e.target.value) })}
-                className="w-full"
-                style={{ accentColor: '#e94560' }}
+              <h3 className="text-sm font-semibold mb-3" style={{ color: '#e94560' }}>角色背景描述</h3>
+              <textarea
+                value={characterSettings.customDescription || ''}
+                onChange={(e) => setCharacterSettings({ ...characterSettings, customDescription: e.target.value })}
+                placeholder="描述你的人物背景、特点、外貌等..."
+                className="w-full px-4 py-3 rounded-xl text-sm resize-none"
+                rows={4}
+                style={{ background: 'rgba(255,255,255,0.1)', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' }}
               />
-            </div>
-
-            {/* Auto Reply Speed */}
-            <div className="p-5 rounded-2xl" style={{ background: 'rgba(233,69,96,0.1)', border: '1px solid rgba(233,69,96,0.2)' }}>
-              <h3 className="text-sm font-semibold mb-3" style={{ color: '#e94560' }}>主动回复速度</h3>
-              <div className="flex gap-2">
-                {(['slow', 'normal', 'fast'] as const).map(speed => (
-                  <button
-                    key={speed}
-                    onClick={() => setSystemSettings({ ...systemSettings, autoReplySpeed: speed })}
-                    className="flex-1 py-3 rounded-xl text-sm font-medium transition-all"
-                    style={{
-                      background: systemSettings.autoReplySpeed === speed
-                        ? 'linear-gradient(135deg, #e94560, #ff6b8a)'
-                        : 'rgba(255,255,255,0.1)',
-                      color: '#fff',
-                    }}
-                  >
-                    {speed === 'slow' ? '慢' : speed === 'normal' ? '正常' : '快'}
-                  </button>
-                ))}
-              </div>
+              <p className="text-xs mt-2" style={{ color: '#888' }}>这个描述会影响AI的回复风格</p>
             </div>
           </div>
         )}
@@ -269,6 +244,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
                 className="w-full"
                 style={{ accentColor: '#3b82f6' }}
               />
+              <p className="text-xs mt-2" style={{ color: '#888' }}>间隔越短，检测越频繁但占用资源越多</p>
             </div>
 
             {/* Auto Reply */}
@@ -319,6 +295,54 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
                   />
                 </button>
               </div>
+            </div>
+
+            {/* Memory Days */}
+            <div className="p-5 rounded-2xl" style={{ background: 'rgba(59,130,246,0.1)', border: '1px solid rgba(59,130,246,0.2)' }}>
+              <div className="flex items-center justify-between mb-3">
+                <div>
+                  <h3 className="text-sm font-semibold" style={{ color: '#3b82f6' }}>记忆保存天数</h3>
+                  <p className="text-xs mt-1" style={{ color: '#888' }}>超过天数的记忆会被自动清理</p>
+                </div>
+                <span className="text-2xl font-bold" style={{ color: '#3b82f6' }}>{systemSettings.memoryDays}天</span>
+              </div>
+              <input
+                type="range"
+                min="7"
+                max="90"
+                step="1"
+                value={systemSettings.memoryDays}
+                onChange={(e) => setSystemSettings({ ...systemSettings, memoryDays: parseInt(e.target.value) })}
+                className="w-full"
+                style={{ accentColor: '#3b82f6' }}
+              />
+            </div>
+
+            {/* Auto Reply Speed */}
+            <div className="p-5 rounded-2xl" style={{ background: 'rgba(59,130,246,0.1)', border: '1px solid rgba(59,130,246,0.2)' }}>
+              <h3 className="text-sm font-semibold mb-3" style={{ color: '#3b82f6' }}>主动回复速度</h3>
+              <div className="flex gap-2">
+                {(['slow', 'normal', 'fast'] as const).map(speed => (
+                  <button
+                    key={speed}
+                    onClick={() => setSystemSettings({ ...systemSettings, autoReplySpeed: speed })}
+                    className="flex-1 py-3 rounded-xl text-sm font-medium transition-all"
+                    style={{
+                      background: systemSettings.autoReplySpeed === speed
+                        ? 'linear-gradient(135deg, #3b82f6, #60a5fa)'
+                        : 'rgba(255,255,255,0.1)',
+                      color: '#fff',
+                    }}
+                  >
+                    {speed === 'slow' ? '🐢 慢' : speed === 'normal' ? '🚶 正常' : '🚀 快'}
+                  </button>
+                ))}
+              </div>
+              <p className="text-xs mt-2" style={{ color: '#888' }}>
+                {systemSettings.autoReplySpeed === 'slow' ? '大约每5分钟回复一次' :
+                 systemSettings.autoReplySpeed === 'normal' ? '大约每2分钟回复一次' :
+                 '大约每30秒回复一次'}
+              </p>
             </div>
           </div>
         )}

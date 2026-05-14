@@ -53,6 +53,7 @@ interface CharacterSettings {
   personality: string[];        // 性格标签
   name: string;                // 角色名称
   photoPath: string;            // 照片路径
+  customDescription?: string;    // 自定义角色描述
 }
 
 interface AppState {

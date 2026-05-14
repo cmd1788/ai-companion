@@ -1,7 +1,10 @@
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+use std::process::{Command, Stdio};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::os::windows::process::CommandExt;
 use tauri::{AppHandle, Manager, State};
 use screenshots::Screen;
 
@@ -264,7 +267,6 @@ fn read_file_base64(path: String) -> Result<Vec<u8>, String> {
 #[tauri::command]
 fn write_binary_file(path: String, data: Vec<u8>) -> Result<(), String> {
     log::info!("[RustFS] Writing binary file: {}", path);
-    // 确保目录存在
     if let Some(parent) = std::path::Path::new(&path).parent() {
         std::fs::create_dir_all(parent).map_err(|e| format!("Failed to create dir: {}", e))?;
     }
@@ -282,24 +284,108 @@ fn capture_screen() -> Result<String, String> {
     }
 
     let screen = &screens[0];
-    let image = screen.capture().map_err(|e| format!("Failed to capture: {}", e))?;
+    let image = screen
+        .capture()
+        .map_err(|e| format!("Failed to capture: {}", e))?;
 
     let mut png_bytes: Vec<u8> = Vec::new();
     use image::ImageEncoder;
     let encoder = image::codecs::png::PngEncoder::new(&mut png_bytes);
-    encoder.write_image(
-        &image,
-        image.width(),
-        image.height(),
-        image::ExtendedColorType::Rgba8,
-    )
-    .map_err(|e| format!("Failed to encode PNG: {}", e))?;
+    encoder
+        .write_image(
+            &image,
+            image.width(),
+            image.height(),
+            image::ExtendedColorType::Rgba8,
+        )
+        .map_err(|e| format!("Failed to encode PNG: {}", e))?;
 
     use base64::Engine;
     let base64_str = base64::engine::general_purpose::STANDARD.encode(&png_bytes);
 
-    log::info!("[RustScreen] Screenshot taken, size: {} bytes", base64_str.len());
+    log::info!(
+        "[RustScreen] Screenshot taken, size: {} bytes",
+        base64_str.len()
+    );
     Ok(base64_str)
+}
+
+// Hermes Agent Commands
+
+static HERMES_PROCESS: AtomicBool = AtomicBool::new(false);
+
+#[tauri::command]
+fn hermes_status() -> bool {
+    HERMES_PROCESS.load(Ordering::SeqCst)
+}
+
+#[tauri::command]
+fn hermes_start(hermes_path: String, model: String, api_key: String) -> Result<bool, String> {
+    if HERMES_PROCESS.load(Ordering::SeqCst) {
+        log::info!("[Hermes] Already running");
+        return Ok(true);
+    }
+
+    log::info!("[Hermes] Starting subprocess...");
+    HERMES_PROCESS.store(true, Ordering::SeqCst);
+
+    // Spawn Hermes in background - Windows hidden window
+    let _child = Command::new("python")
+        .arg("-c")
+        .arg(format!(
+            r#"
+import sys
+import os
+sys.path.insert(0, r'{}')
+os.chdir(r'{}')
+os.environ['MINIMAX_API_KEY'] = r'{}'
+
+from run_agent import AIAgent
+
+agent = AIAgent(
+    base_url="https://api.minimax.chat/v1",
+    model="{}"
+)
+
+print("[HERMES_READY]", flush=True)
+
+while True:
+    try:
+        line = sys.stdin.readline()
+        if not line:
+            break
+        user_input = line.strip()
+        if user_input == "__QUIT__":
+            break
+        if user_input:
+            print(f"[HERMES_PROCESSING]", flush=True)
+            response = agent.run_conversation(user_input)
+            print(f"[HERMES_RESPONSE]{{response}}[/HERMES_RESPONSE]", flush=True)
+            print("[HERMES_DONE]", flush=True)
+    except Exception as e:
+        print(f"[HERMES_ERROR]{{e}}", flush=True)
+        print("[HERMES_DONE]", flush=True)
+"#,
+            hermes_path.replace("\\", "\\\\"),
+            hermes_path.replace("\\", "\\\\"),
+            api_key,
+            model
+        ))
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .creation_flags(0x08000000) // CREATE_NO_WINDOW on Windows
+        .spawn();
+
+    log::info!("[Hermes] Subprocess spawned");
+    Ok(true)
+}
+
+#[tauri::command]
+fn hermes_stop() -> Result<(), String> {
+    HERMES_PROCESS.store(false, Ordering::SeqCst);
+    log::info!("[Hermes] Stopped");
+    Ok(())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -335,7 +421,10 @@ pub fn run() {
             read_photo_dir,
             read_file_base64,
             write_binary_file,
-            capture_screen
+            capture_screen,
+            hermes_status,
+            hermes_start,
+            hermes_stop
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
