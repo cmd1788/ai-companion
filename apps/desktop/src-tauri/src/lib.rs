@@ -444,28 +444,198 @@ async fn web_search(query: String, api_key: Option<String>) -> Result<SearchResp
 }
 
 async fn web_search_minimax(query: &str, api_key: &str) -> Result<SearchResponse, String> {
-    log::info!("[WebSearch] Using MiniMax MCP search API");
+    log::info!("[WebSearch] Starting MiniMax MCP stdio search for: {}", query);
     
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(15))
-        .build()
-        .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
+    // Spawn minimax-coding-plan-mcp via uvx with stdio transport
+    // API key is passed via MINIMAX_API_KEY environment variable
     
-    // MiniMax 没有官方搜索 API，使用 Bing API 或返回错误
-    // 这里检查是否有用户配置的 Bing API Key
-    let bing_key = std::env::var("BING_API_KEY").ok();
+    let mut child = Command::new("C:\\Users\\asus\\AppData\\Roaming\\Python\\Python312\\Scripts\\uvx.exe")
+        .args(["minimax-coding-plan-mcp", "-y"])
+        .env("MINIMAX_API_KEY", api_key)
+        .env("MINIMAX_API_HOST", "https://api.minimax.chat")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .creation_flags(0x08000000) // CREATE_NO_WINDOW
+        .spawn()
+        .map_err(|e| format!("Failed to spawn MiniMax MCP: {}. Is uvx installed?", e))?;
     
-    if let Some(key) = bing_key {
-        return bing_search(&client, query, &key).await;
+    let stdin = child.stdin.as_mut()
+        .ok_or("Failed to open stdin")?;
+    let stdout = child.stdout.as_mut()
+        .ok_or("Failed to open stdout")?;
+    
+    // Send JSON-RPC initialize request first (required by MCP protocol)
+    use std::io::{Write, BufRead, BufReader};
+    
+    let init_request = serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": 0,
+        "method": "initialize",
+        "params": {
+            "protocolVersion": "2024-11-05",
+            "capabilities": {},
+            "clientInfo": {
+                "name": "ai-companion",
+                "version": "1.0.0"
+            }
+        }
+    });
+    
+    let mut request_str = serde_json::to_string(&init_request).map_err(|e| e.to_string())?;
+    request_str.push('\n');
+    
+    stdin.write_all(request_str.as_bytes()).map_err(|e| e.to_string())?;
+    stdin.flush().map_err(|e| e.to_string())?;
+    
+    // Read initialize response
+    let mut reader = BufReader::new(stdout);
+    let mut init_response = String::new();
+    reader.read_line(&mut init_response).map_err(|e| format!("Failed to read init response: {}", e))?;
+    
+    log::info!("[WebSearch] MCP init response: {}", &init_response[..init_response.len().min(200)]);
+    
+    // Send initialized notification (required by MCP)
+    let notif = serde_json::json!({
+        "jsonrpc": "2.0",
+        "method": "notifications/initialized",
+        "params": {}
+    });
+    request_str = serde_json::to_string(&notif).map_err(|e| e.to_string())?;
+    request_str.push('\n');
+    stdin.write_all(request_str.as_bytes()).map_err(|e| e.to_string())?;
+    stdin.flush().map_err(|e| e.to_string())?;
+    
+    // Now send tools/list to verify
+    let list_request = serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/list",
+        "params": {}
+    });
+    request_str = serde_json::to_string(&list_request).map_err(|e| e.to_string())?;
+    request_str.push('\n');
+    stdin.write_all(request_str.as_bytes()).map_err(|e| e.to_string())?;
+    stdin.flush().map_err(|e| e.to_string())?;
+    
+    // Read tools/list response
+    let mut tools_response = String::new();
+    reader.read_line(&mut tools_response).map_err(|e| format!("Failed to read tools list: {}", e))?;
+    
+    log::info!("[WebSearch] MCP tools list: {}", &tools_response[..tools_response.len().min(300)]);
+    
+    // Now send the actual web_search request
+    let search_request = serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": 2,
+        "method": "tools/call",
+        "params": {
+            "name": "web_search",
+            "arguments": {
+                "query": query
+            }
+        }
+    });
+    
+    request_str = serde_json::to_string(&search_request).map_err(|e| e.to_string())?;
+    request_str.push('\n');
+    
+    stdin.write_all(request_str.as_bytes()).map_err(|e| e.to_string())?;
+    stdin.flush().map_err(|e| e.to_string())?;
+    
+    // Read search response
+    let mut search_response = String::new();
+    reader.read_line(&mut search_response).map_err(|e| format!("Failed to read search response: {}", e))?;
+    
+    log::info!("[WebSearch] MCP search response received, length: {}", search_response.len());
+    
+    // Parse JSON-RPC response
+    #[derive(Deserialize)]
+    struct JsonRpcResponse {
+        #[serde(default)]
+        result: Option<serde_json::Value>,
+        #[serde(default)]
+        error: Option<serde_json::Value>,
     }
     
-    // 没有可用的搜索 API，返回 BLOCKED_API_CONFIG
-    Ok(SearchResponse {
-        ok: false,
-        results: vec![],
-        source: "minimax".to_string(),
-        error: Some("BLOCKED_API_CONFIG: No search API key configured. Set BING_API_KEY env var or use MiniMax MCP search tool.".to_string()),
-    })
+    let rpc_resp: JsonRpcResponse = serde_json::from_str(&search_response)
+        .map_err(|e| format!("Failed to parse MCP response: {} - raw: {}", e, &search_response[..search_response.len().min(500)]))?;
+    
+    // Parse search results from result
+    let results_value = rpc_resp.result
+        .ok_or_else(|| format!("MCP error: {:?}. Raw: {}", rpc_resp.error, &search_response[..search_response.len().min(300)]))?;
+    
+    // Extract results array - MCP returns content array with text containing JSON
+    let content = results_value.get("content")
+        .and_then(|c| c.as_array())
+        .ok_or("MCP response missing content array")?;
+    
+    let mut search_results: Vec<SearchResult> = Vec::new();
+    for item in content {
+        if let Some(text) = item.get("text").and_then(|t| t.as_str()) {
+            // The text is a JSON string containing { "organic": [...], "base_resp": {...} }
+            #[derive(Deserialize)]
+            struct MCPResults {
+                organic: Option<Vec<MCPSearchResult>>,
+                base_resp: Option<BaseResp>,
+            }
+            #[derive(Deserialize)]
+            struct MCPSearchResult {
+                title: String,
+                link: String,
+                snippet: String,
+                #[serde(default)]
+                date: String,
+            }
+            #[derive(Deserialize)]
+            struct BaseResp {
+                status_code: i32,
+                #[serde(default)]
+                status_msg: String,
+            }
+            
+            if let Ok(parsed) = serde_json::from_str::<MCPResults>(text) {
+                if let Some(organic) = parsed.organic {
+                    for r in organic {
+                        search_results.push(SearchResult {
+                            title: r.title,
+                            url: r.link,
+                            snippet: r.snippet,
+                        });
+                    }
+                }
+                // Check if search was successful
+                if let Some(base) = parsed.base_resp {
+                    if base.status_code != 0 {
+                        log::warn!("[WebSearch] MCP returned status_code={}", base.status_code);
+                    }
+                }
+                break;
+            }
+        }
+    }
+    
+    log::info!("[WebSearch] Parsed {} search results", search_results.len());
+    
+    // Kill the MCP process
+    child.kill().ok();
+    let _ = child.wait();
+    
+    if search_results.is_empty() {
+        Ok(SearchResponse {
+            ok: false,
+            results: vec![],
+            source: "minimax_mcp_stdio".to_string(),
+            error: Some(format!("MCP returned {} results but none could be parsed", content.len())),
+        })
+    } else {
+        Ok(SearchResponse {
+            ok: true,
+            results: search_results,
+            source: "minimax_mcp_stdio".to_string(),
+            error: None,
+        })
+    }
 }
 
 async fn bing_search(client: &reqwest::Client, query: &str, api_key: &str) -> Result<SearchResponse, String> {

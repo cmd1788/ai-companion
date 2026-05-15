@@ -97,6 +97,7 @@ export async function searchMock(query: string, _provider: NetworkProvider, maxR
 
 export async function searchMiniMaxMCP(query: string, _provider: NetworkProvider, maxResults: number = 5): Promise<NetworkSearchResponse> {
   const startTime = Date.now();
+  const providerName = _provider === 'minimax_web_search' ? 'minimax_web_search' : 'minimax_mcp';
   
   try {
     // 动态导入 mcpService 避免循环依赖
@@ -107,26 +108,26 @@ export async function searchMiniMaxMCP(query: string, _provider: NetworkProvider
     
     if (result.success && result.results) {
       const results = result.results.slice(0, maxResults);
-      networkLog.add(query, 'minimax_mcp', results.length, true, undefined, duration);
+      networkLog.add(query, _provider, results.length, true, undefined, duration);
       
       return {
         ok: true,
         query,
         results,
-        source: 'minimax_mcp',
+        source: providerName as any,
         timestamp: Date.now(),
-        summary: `找到 ${results.length} 条相关结果（MiniMax MCP）`,
+        summary: `找到 ${results.length} 条相关结果（${providerName === 'minimax_web_search' ? 'MiniMax 独立搜索' : 'MiniMax MCP'}）`,
       };
     } else {
       const errorMsg = result.error || 'Unknown error';
-      networkLog.add(query, 'minimax_mcp', 0, false, errorMsg, duration);
+      networkLog.add(query, _provider, 0, false, errorMsg, duration);
       
       return {
         ok: false,
         query,
         results: [],
         error: errorMsg,
-        source: 'minimax_mcp',
+        source: providerName as any,
         timestamp: Date.now(),
         degraded: true,
       };
@@ -135,14 +136,14 @@ export async function searchMiniMaxMCP(query: string, _provider: NetworkProvider
     const duration = Date.now() - startTime;
     const errorMsg = error.message || 'Unknown error';
     
-    networkLog.add(query, 'minimax_mcp', 0, false, errorMsg, duration);
+    networkLog.add(query, _provider, 0, false, errorMsg, duration);
     
     return {
       ok: false,
       query,
       results: [],
       error: errorMsg,
-      source: 'minimax_mcp',
+      source: providerName as any,
       timestamp: Date.now(),
       degraded: true,
     };

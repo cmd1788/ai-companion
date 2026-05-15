@@ -9,6 +9,7 @@ import { storageAdapter } from './storageAdapter';
 import { networkLog } from './networkLog';
 import { apiRuntime } from './api';
 import { agentRuntime } from './agent';
+import { useAppStore } from '../store';
 
 // Runtime 状态
 let runtimeStatus: RuntimeStatus = {
@@ -261,7 +262,7 @@ async function networkSearch(
   query: string,
   options?: { provider?: NetworkProvider; maxResults?: number }
 ): Promise<NetworkSearchResponse> {
-  const provider = options?.provider || networkStatus.provider || 'mock';
+  const provider = options?.provider || networkStatus.provider || 'minimax_web_search';
   const maxResults = options?.maxResults || 5;
   
   networkStatus.lastQuery = query;
@@ -283,9 +284,11 @@ async function networkSearch(
     return response;
   }
   
-  // Tauri 模式 - 尝试真实联网
+  // Tauri 模式 - 尝试真实联网（优先使用 minimax_web_search provider）
   if (isTauriRuntime() && provider !== 'mock') {
-    const result = await tauriAdapter.webSearch(query, maxResults);
+    // 获取 API Key 并传递给 Tauri 后端
+    const apiKey = useAppStore.getState()?.apiSettings?.apiKey;
+    const result = await tauriAdapter.webSearch(query, maxResults, apiKey);
     if (result.ok && result.data) {
       networkStatus.lastSuccessAt = Date.now();
       networkStatus.source = 'tauri';
@@ -301,7 +304,7 @@ async function networkSearch(
   }
   
   // Browser/Test 模式 - 根据 provider 路由到不同 Runtime
-  if (provider === 'mock' || provider === 'fetch' || provider === 'minimax_agent' || provider === 'github_api' || provider === 'minimax' || provider === 'minimax_mcp_bridge') {
+  if (provider === 'mock' || provider === 'fetch' || provider === 'minimax_agent' || provider === 'github_api' || provider === 'minimax' || provider === 'minimax_mcp_bridge' || provider === 'minimax_web_search') {
     try {
       let response: NetworkSearchResponse;
 
@@ -352,6 +355,13 @@ async function networkSearch(
             timestamp: Date.now(),
             degraded: true,
           };
+        }
+      } else if (provider === 'minimax_web_search') {
+        // MiniMax 独立 Web Search - 直接调用 MiniMax REST API，不依赖 OpenClaw
+        console.log(`[Runtime.network] Using minimax_web_search provider (direct API)`);
+        response = await browserAdapter.searchMiniMaxMCP(query, provider, maxResults);
+        if (!response.ok) {
+          response.degraded = true;
         }
       } else {
         // fetch 模式，可能 CORS 失败

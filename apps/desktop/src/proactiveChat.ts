@@ -14,11 +14,18 @@ const SPEED_CONFIG = {
   slow: 180000,    // 3分钟
   normal: 90000,   // 90秒  
   fast: 45000,     // 45秒
+  test: 5000,      // 测试模式 5秒
 };
 
 // 冷却时间（毫秒）
-const COOLDOWN_AFTER_USER = 30000;
-const COOLDOWN_AFTER_PROACTIVE = 60000;
+const COOLDOWN_CONFIG = {
+  user: 30000,        // 用户发消息后冷却
+  proactive: 60000,   // 主动消息冷却
+  test: {
+    user: 3000,       // 测试模式：用户冷却 3秒
+    proactive: 5000,   // 测试模式：主动冷却 5秒
+  }
+};
 
 /**
  * 启动主动聊天检查器
@@ -36,9 +43,11 @@ export function startProactiveChat() {
     return;
   }
 
-  const interval = SPEED_CONFIG[state.systemSettings.autoReplySpeed] || SPEED_CONFIG.normal;
+  // 检查测试模式
+  const isTestMode = typeof window !== 'undefined' && (window as any).__AI_COMPANION_TEST_MODE__ === true;
+  const interval = isTestMode ? SPEED_CONFIG.test : (SPEED_CONFIG[state.systemSettings.autoReplySpeed] || SPEED_CONFIG.normal);
   
-  console.log(`[ProactiveChat] Starting with interval ${interval}ms`);
+  console.log(`[ProactiveChat] Starting with interval ${interval}ms${isTestMode ? ' (TEST MODE)' : ''}`);
   
   proactiveInterval = setInterval(async () => {
     await checkAndProactive();
@@ -88,15 +97,22 @@ async function checkAndProactive() {
   }
 
   const now = Date.now();
+  
+  // 检查测试模式
+  const isTestMode = typeof window !== 'undefined' && (window as any).__AI_COMPANION_TEST_MODE__ === true;
+  
+  // 获取冷却时间配置
+  const cooldownUser = isTestMode ? COOLDOWN_CONFIG.test.user : COOLDOWN_CONFIG.user;
+  const cooldownProactive = isTestMode ? COOLDOWN_CONFIG.test.proactive : COOLDOWN_CONFIG.proactive;
 
   // 冷却检查
-  if (lastUserMessageAt > 0 && (now - lastUserMessageAt) < COOLDOWN_AFTER_USER) {
-    console.log('[ProactiveChat] User active recently, waiting');
+  if (lastUserMessageAt > 0 && (now - lastUserMessageAt) < cooldownUser) {
+    if (isTestMode) console.log('[ProactiveChat][TEST] User active recently, waiting');
     return;
   }
 
-  if (lastProactiveMessageAt > 0 && (now - lastProactiveMessageAt) < COOLDOWN_AFTER_PROACTIVE) {
-    console.log('[ProactiveChat] Proactive cooldown not finished');
+  if (lastProactiveMessageAt > 0 && (now - lastProactiveMessageAt) < cooldownProactive) {
+    if (isTestMode) console.log('[ProactiveChat][TEST] Proactive cooldown not finished');
     return;
   }
 
@@ -168,24 +184,24 @@ ${memoryContext}
  * 直接调用MiniMax API（简化版，不走工具调用）
  */
 async function callMiniMaxAPI(prompt) {
-  const state = useAppStore.getState();
-  const { aiConfig } = state;
+  // 必须从 getState() 获取最新的 API key
+  const { apiKey, baseUrl, model } = useAppStore.getState().aiConfig;
   
-  const apiKey = aiConfig.apiKey;
+  // API Key 缺失诊断
   if (!apiKey) {
-    console.error('[ProactiveChat] No API key');
-    return null;
+    console.error('[MODEL_DEBUG][Proactive] API_KEY_MISSING: apiKey is empty');
+    return 'PROACTIVE_MODEL_API_KEY_MISSING';
   }
 
   try {
-    const response = await fetch(`${aiConfig.baseUrl}/v1/text/chatcompletion_v2`, {
+    const response = await fetch(`${baseUrl}/v1/text/chatcompletion_v2`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: aiConfig.model,
+        model: model,
         messages: [
           { role: 'user', content: prompt }
         ],
@@ -194,16 +210,31 @@ async function callMiniMaxAPI(prompt) {
       }),
     });
 
+    // MODEL_DEBUG 日志
+    console.log('[MODEL_DEBUG][Proactive] response.ok=', response.ok);
+    console.log('[MODEL_DEBUG][Proactive] status=', response.status);
+    
     if (!response.ok) {
-      console.error('[ProactiveChat] API error:', response.status);
-      return null;
+      const errorText = await response.text().catch(() => 'Unknown error');
+      console.error(`[MODEL_DEBUG][Proactive] API_ERROR: status=${response.status}, error=${errorText}`);
+      return `PROACTIVE_MODEL_API_ERROR: status=${response.status}`;
     }
 
     const data = await response.json();
     const reply = data.choices?.[0]?.message?.content || data.choices?.[0]?.message?.reasoning_content || '';
+    
+    console.log('[MODEL_DEBUG][Proactive] content.length=', reply.length);
+    console.log('[MODEL_DEBUG][Proactive] base_resp.status_code=', data.base_resp?.status_code);
+    
+    // API返回空内容诊断
+    if (!reply || !reply.trim()) {
+      console.error('[MODEL_DEBUG][Proactive] MODEL_EMPTY_CONTENT: reply is empty');
+      return 'PROACTIVE_MODEL_EMPTY_CONTENT';
+    }
+    
     return reply.trim();
   } catch (error) {
-    console.error('[ProactiveChat] API call failed:', error);
-    return null;
+    console.error('[MODEL_DEBUG][Proactive] API call failed:', error.message);
+    return 'PROACTIVE_MODEL_CALL_FAILED';
   }
 }

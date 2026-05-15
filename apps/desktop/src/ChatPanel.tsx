@@ -138,16 +138,33 @@ export function ChatPanel() {
 
   // 带工具调用的API调用
   const callMiniMax = async (userMessage: string, networkContext?: {query: string; results: string}): Promise<string> => {
-    const apiKey = aiConfig.apiKey || '';
+    // 必须从 getState() 获取，确保读取最新的 API key
+    const { apiKey } = useAppStore.getState().aiConfig;
     if (!apiKey) {
-      throw new Error('请先在设置中配置MiniMax API Key');
+      // 返回结构化错误代码，不要抛出异常
+      return 'MODEL_API_KEY_MISSING';
     }
-    
+
+    // [AI_PROMPT_DEBUG] - 验证网络上下文是否正确注入
+    const hasNetworkContext = !!networkContext;
+    const networkResultCount = networkContext?.results ? networkContext.results.split('\n\n').length : 0;
+    const networkSource = 'mock'; // source 从 searchResult 传递，这里简化
+    const builtSystemPrompt = buildSystemPrompt(networkContext);
+    const promptIncludesNetworkResults = hasNetworkContext && builtSystemPrompt.includes('联网搜索信息');
+    const promptIncludesNoInternetFallback = builtSystemPrompt.includes('不能联网') || builtSystemPrompt.includes('无法联网') || builtSystemPrompt.includes('没有联网');
     const conversationHistory = messages.map(m => ({
       role: m.role as 'user' | 'assistant',
       content: m.content
     }));
-    
+    const finalMessagesCount = 2 + conversationHistory.length; // system + user + history
+
+    console.log('[AI_PROMPT_DEBUG] hasNetworkContext=', hasNetworkContext);
+    console.log('[AI_PROMPT_DEBUG] networkResultCount=', networkResultCount);
+    console.log('[AI_PROMPT_DEBUG] networkSource=', networkSource);
+    console.log('[AI_PROMPT_DEBUG] promptIncludesNetworkResults=', promptIncludesNetworkResults);
+    console.log('[AI_PROMPT_DEBUG] promptIncludesNoInternetFallback=', promptIncludesNoInternetFallback);
+    console.log('[AI_PROMPT_DEBUG] finalMessagesCount=', finalMessagesCount);
+
     const response = await fetch(`${API_BASE}/v1/text/chatcompletion_v2`, {
       method: 'POST',
       headers: {
@@ -171,14 +188,48 @@ export function ChatPanel() {
     });
 
     if (!response.ok) {
-      throw new Error(`API错误: ${response.status}`);
+      const status = response.status;
+      const errorText = await response.text().catch(() => 'Unknown error');
+      console.error(`[MODEL_DEBUG] response.ok=false, status=${status}, error=${errorText}`);
+      return `MODEL_API_ERROR: status=${status}, error=${errorText}`;
     }
 
     const data = await response.json();
     const choice = data.choices?.[0];
+    const content = choice?.message?.content || '';
+    const reasoningContent = choice?.message?.reasoning_content || '';
+    const finishReason = choice?.finish_reason || '';
     
-    // 兼容处理：content为空时使用reasoning_content
-    let replyContent = choice?.message?.content || choice?.message?.reasoning_content || '';
+    // MODEL_DEBUG 日志
+    console.log('[MODEL_DEBUG] response.ok=', response.ok);
+    console.log('[MODEL_DEBUG] status=', response.status);
+    console.log('[MODEL_DEBUG] choices.length=', data.choices?.length || 0);
+    console.log('[MODEL_DEBUG] content.length=', content.length);
+    console.log('[MODEL_DEBUG] reasoning_content.length=', reasoningContent.length);
+    console.log('[MODEL_DEBUG] finish_reason=', finishReason);
+    console.log('[MODEL_DEBUG] base_resp.status_code=', data.base_resp?.status_code);
+    if (data.base_resp?.status_msg) {
+      console.log('[MODEL_DEBUG] base_resp.status_msg=', data.base_resp.status_msg);
+    }
+    
+    //choices为空诊断
+    if (!data.choices || data.choices.length === 0) {
+      console.error('[MODEL_DEBUG] MODEL_EMPTY_CHOICES: choices is empty or undefined');
+      return 'MODEL_EMPTY_CHOICES';
+    }
+    
+    //content和reasoning_content都为空诊断
+    if (!content && !reasoningContent) {
+      console.error('[MODEL_DEBUG] MODEL_EMPTY_CONTENT: both content and reasoning_content are empty');
+      return 'MODEL_EMPTY_CONTENT';
+    }
+    
+    // 兼容处理：MiniMax模型通常在reasoning_content中返回实际回复
+    // 如果content太短(<50字符)但reasoning_content更长，使用reasoning_content
+    let replyContent = content;
+    if (!content || content.length < 50) {
+      replyContent = reasoningContent || content;
+    }
     
     // 检查是否有工具调用
     if (choice?.finish_reason === 'tool_calls' || choice?.message?.tool_calls) {
@@ -303,13 +354,27 @@ export function ChatPanel() {
 
     try {
       const reply = await callMiniMax(userMessage, networkContext);
-      addMessage({ role: 'assistant', content: reply });
       
-      // 更新情绪和记忆
-      updateEmotionFromChat(userMessage, reply);
+      if (reply === 'MODEL_API_KEY_MISSING') {
+        // 联网搜索已完成，但模型 API Key 未配置
+        const networkStatusMsg = networkContext
+          ? `🌐 联网搜索已完成，但模型 API Key 未配置，无法生成最终回复~\n\n请到设置中填写 MiniMax API Key。`
+          : `⚠️ MiniMax API Key 未配置，无法回复~\n\n请到设置中填写 MiniMax API Key。`;
+        addMessage({ role: 'system', content: networkStatusMsg });
+        addMessage({ role: 'assistant', content: 'MODEL_API_KEY_MISSING' });
+      } else {
+        addMessage({ role: 'assistant', content: reply });
+        // 更新情绪和记忆
+        updateEmotionFromChat(userMessage, reply);
+      }
     } catch (error) {
       console.error('AI调用失败:', error);
-      addMessage({ role: 'assistant', content: '抱歉，小伊暂时离线了~' });
+      const errMsg = error instanceof Error ? error.message : String(error);
+      if (errMsg.includes('fetch') || errMsg.includes('network')) {
+        addMessage({ role: 'assistant', content: '网络连接失败，请检查网络后重试~' });
+      } else {
+        addMessage({ role: 'assistant', content: '抱歉，小伊暂时离线了~' });
+      }
     } finally {
       setIsLoading(false);
       setIsAITyping(false);

@@ -823,9 +823,10 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   {[
-                    { value: 'minimax_mcp_bridge', label: '🔗 MiniMax MCP Bridge', desc: '通过 Hermes/OpenClaw 网关', color: '#22c55e' },
+                    { value: 'minimax_web_search', label: '🔍 MiniMax Web Search', desc: '使用 MiniMax Key 独立联网搜索', color: '#06b6d4' },
+                    { value: 'github_api', label: '🐙 GitHub API', desc: 'GitHub 仓库搜索', color: '#6e40c9' },
+                    { value: 'minimax_mcp_bridge', label: '🔗 OpenClaw Bridge', desc: '旧兼容模式，需 OpenClaw Gateway', color: '#22c55e' },
                     { value: 'mock', label: '🔮 Mock', desc: '测试模式，返回模拟数据', color: '#a855f7' },
-                    { value: 'fetch', label: '🌍 Browser Fetch', desc: '浏览器直接请求(可能CORS)', color: '#3b82f6' },
                     { value: 'disabled', label: '❌ 禁用', desc: '关闭所有联网功能', color: '#ef4444' },
                   ].map(item => (
                     <button
@@ -842,6 +843,33 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
                       <div className="text-xs mt-1" style={{ color: '#888' }}>{item.desc}</div>
                     </button>
                   ))}
+                </div>
+              </div>
+
+              {/* 重置联网设置按钮 */}
+              <div
+                className="p-4 rounded-xl"
+                style={{ background: 'rgba(6,182,212,0.05)', border: '1px solid rgba(6,182,212,0.15)' }}
+              >
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="text-sm">🔄</span>
+                      <span className="text-sm font-medium" style={{ color: '#06b6d4' }}>重置联网设置</span>
+                    </div>
+                    <div className="text-xs" style={{ color: '#888' }}>
+                      将联网供应商重置为 MiniMax Web Search，不依赖 OpenClaw
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => {
+                      useAppStore.getState().resetNetworkSettings();
+                    }}
+                    className="px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+                    style={{ background: 'rgba(6,182,212,0.15)', color: '#06b6d4', border: '1px solid rgba(6,182,212,0.3)' }}
+                  >
+                    重置
+                  </button>
                 </div>
               </div>
 

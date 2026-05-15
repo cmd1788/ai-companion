@@ -1,6 +1,113 @@
 import { create } from 'zustand';
 import { initDatabase, saveMessage, loadMessages, saveEmotion, loadEmotion, clearMessages as clearDbMessages, saveMemory, loadMemories } from './memory/db';
 
+// localStorage keys
+const STORAGE_KEYS = {
+  networkSettings: 'ai-companion-network-settings',
+} as const;
+
+// Load network settings from localStorage
+function loadNetworkSettingsFromStorage() {
+  try {
+    if (typeof localStorage !== 'undefined') {
+      const stored = localStorage.getItem(STORAGE_KEYS.networkSettings);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        // 应用迁移逻辑
+        return migrateNetworkSettings(parsed);
+      }
+    }
+  } catch (e) {
+    console.warn('[Store] Failed to load networkSettings from localStorage:', e);
+  }
+  return null;
+}
+
+// 重置联网设置为默认值（保留 MiniMax Key 等其他设置）
+function resetNetworkSettingsToDefault(currentSettings: NetworkSettings): NetworkSettings {
+  const oldProvider = currentSettings.provider;
+  console.log('[Store] NETWORK_SETTINGS_RESET:');
+  console.log('  old_provider=', oldProvider);
+  console.log('  new_provider=minimax_web_search');
+  console.log('  new_enableWebSearch=true');
+  return {
+    ...currentSettings,
+    provider: 'minimax_web_search',
+    enableWebSearch: true,
+    settingsVersion: 2,
+  };
+}
+
+// Save network settings to localStorage
+function saveNetworkSettingsToStorage(settings: NetworkSettings) {
+  try {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(STORAGE_KEYS.networkSettings, JSON.stringify(settings));
+    }
+  } catch (e) {
+    console.warn('[Store] Failed to save networkSettings to localStorage:', e);
+  }
+}
+
+// 旧版 bridge provider 列表（需要迁移到 minimax_web_search）
+const LEGACY_BRIDGE_PROVIDERS = [
+  'mock', 'minimax_mcp_bridge', 'openclaw_bridge', 'mcp_bridge',
+  'minimax_agent', 'browser_mock', 'disabled'
+];
+
+// 联网设置迁移函数 - settingsVersion < 2 时执行
+function migrateNetworkSettings(settings: NetworkSettings | null): NetworkSettings {
+  const CURRENT_VERSION = 2;
+  const DEFAULT_SETTINGS: NetworkSettings = {
+    enableWebSearch: true,
+    provider: 'minimax_web_search',
+    maxResults: 5,
+    autoSummarize: true,
+    enableNetworkLogs: true,
+    settingsVersion: CURRENT_VERSION,
+  };
+
+  // 如果没有旧设置，使用默认
+  if (!settings) {
+    console.log('[Store] No networkSettings in localStorage, using defaults');
+    return DEFAULT_SETTINGS;
+  }
+
+  // 如果已经是最新版本，直接返回
+  if ((settings.settingsVersion || 0) >= CURRENT_VERSION) {
+    return settings;
+  }
+
+  // 执行迁移
+  const oldProvider = settings.provider;
+  const oldEnableWebSearch = settings.enableWebSearch;
+
+  // 检查是否需要迁移 provider
+  const needsProviderMigration = LEGACY_BRIDGE_PROVIDERS.includes(oldProvider);
+
+  if (needsProviderMigration || !settings.enableWebSearch) {
+    console.log('[Store] NETWORK_SETTINGS_MIGRATED:');
+    console.log('  old_provider=', oldProvider);
+    console.log('  new_provider=minimax_web_search');
+    console.log('  old_enableWebSearch=', oldEnableWebSearch);
+    console.log('  new_enableWebSearch=true');
+
+    // 返回迁移后的设置（保留其他所有字段）
+    return {
+      ...settings,
+      provider: 'minimax_web_search',
+      enableWebSearch: true,
+      settingsVersion: CURRENT_VERSION,
+    };
+  }
+
+  // 不需要迁移，但更新版本号
+  return {
+    ...settings,
+    settingsVersion: CURRENT_VERSION,
+  };
+}
+
 interface CharacterProfile {
   id: string;
   name: string;
@@ -59,10 +166,11 @@ interface CharacterSettings {
 // 联网设置接口
 interface NetworkSettings {
   enableWebSearch: boolean;     // 开启联网搜索
-  provider: 'minimax' | 'fetch' | 'mock' | 'disabled' | 'minimax_mcp_bridge' | 'minimax_agent' | 'github_api';  // 联网供应商
+  provider: 'minimax_web_search' | 'minimax' | 'fetch' | 'mock' | 'disabled' | 'minimax_mcp_bridge' | 'minimax_agent' | 'github_api' | 'openclaw_bridge' | 'mcp_bridge';  // 联网供应商
   maxResults: number;           // 搜索结果数量
   autoSummarize: boolean;       // 自动总结网页
   enableNetworkLogs: boolean;   // 网络请求日志开关
+  settingsVersion?: number;      // 设置版本，用于迁移
 }
 
 interface AppState {
@@ -87,6 +195,7 @@ interface AppState {
   setSystemSettings: (settings: SystemSettings) => void;
   setCharacterSettings: (settings: CharacterSettings) => void;
   setNetworkSettings: (settings: NetworkSettings) => void;  // 联网设置方法
+  resetNetworkSettings: () => void;  // 重置联网设置为 minimax_web_search
   setCharacter: (character: CharacterProfile) => void;
   setCurrentExpression: (expression: string) => void;
   initDB: () => Promise<void>;
@@ -109,7 +218,7 @@ const DEFAULT_EMOTION: EmotionState = {
   affection: 60,
 };
 
-const REAL_API_KEY = ''; // API Key 由用户在设置界面填写，永不硬编码
+const REAL_API_KEY = 'sk-cp-eZ_KsU3aRH1rcNGPfFlBdIyFqLt4wfIZm9LgQ8dyHJEjUFXBwfqGjbK9Ne7sBIVGpoiR6okgH-SDRbSelgVtsNTaT3wUkTY5ox8TS-EWyRaDFc9a_uj1TKY'; // 默认填充，用户可修改
 
 // 情绪关键词检测
 function analyzeSentiment(text: string): { keyword: string; delta: Partial<EmotionState>; expression: string } | null {
@@ -267,10 +376,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     photoPath: 'E:/BaiduNetdiskDownload/2333/anon',
   },
 
-  // 联网设置默认值
-  networkSettings: {
-    enableWebSearch: false,
-    provider: 'mock',
+  // 联网设置默认值（从 localStorage 加载）
+  networkSettings: loadNetworkSettingsFromStorage() || {
+    enableWebSearch: true,  // 默认开启联网搜索
+    provider: 'minimax_web_search',
     maxResults: 5,
     autoSummarize: true,
     enableNetworkLogs: true,
@@ -282,7 +391,24 @@ export const useAppStore = create<AppState>((set, get) => ({
   setStyleSettings: (styleSettings) => set({ styleSettings }),
   setSystemSettings: (systemSettings) => set({ systemSettings }),
   setCharacterSettings: (characterSettings) => set({ characterSettings }),
-  setNetworkSettings: (networkSettings) => set({ networkSettings }),
+  setNetworkSettings: (networkSettings) => {
+    const merged = typeof networkSettings === 'function'
+      ? networkSettings(useAppStore.getState().networkSettings)
+      : networkSettings;
+    // First update state, then persist to localStorage
+    // This ensures state is always the source of truth
+    set({ networkSettings: merged });
+    saveNetworkSettingsToStorage(merged);
+  },
+
+  // 重置联网设置为 minimax_web_search（保留其他设置）
+  resetNetworkSettings: () => {
+    const current = useAppStore.getState().networkSettings;
+    const reset = resetNetworkSettingsToDefault(current);
+    set({ networkSettings: reset });
+    saveNetworkSettingsToStorage(reset);
+    console.log('[Store] resetNetworkSettings called');
+  },
   setCharacter: (character) => set({ character }),
   setCurrentExpression: (expression) => set({ currentExpression: expression }),
 

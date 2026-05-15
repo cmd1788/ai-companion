@@ -70,8 +70,8 @@ export interface RuntimeStateExport {
 
 // ========== Network Types ==========
 
-export type NetworkProvider = 'minimax' | 'fetch' | 'minimax_agent' | 'github_api' | 'mock' | 'minimax_mcp_bridge' | 'browser_fetch' | 'disabled';
-export type NetworkSource = 'tauri' | 'browser' | 'mock' | 'minimax_mcp' | 'minimax_mcp_bridge';
+export type NetworkProvider = 'minimax_web_search' | 'minimax' | 'fetch' | 'minimax_agent' | 'github_api' | 'mock' | 'minimax_mcp_bridge' | 'browser_fetch' | 'disabled';
+export type NetworkSource = 'tauri' | 'browser' | 'mock' | 'minimax_web_search' | 'minimax_mcp' | 'minimax_mcp_bridge';
 
 export interface NetworkSearchResult {
   title: string;
