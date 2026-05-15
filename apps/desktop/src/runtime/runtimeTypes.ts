@@ -82,6 +82,7 @@ export interface NetworkSearchResult {
 }
 
 export interface NetworkSearchResponse {
+  ok?: boolean;
   query: string;
   results: NetworkSearchResult[];
   summary?: string;

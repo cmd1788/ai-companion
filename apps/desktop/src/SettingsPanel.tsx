@@ -12,6 +12,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
   const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
   const [testLatency, setTestLatency] = useState<number | null>(null);
   const [connectionLog, setConnectionLog] = useState<string[]>([]);
+  const stopDragPropagation = (e: React.MouseEvent) => e.stopPropagation();
 
   const {
     aiConfig, setAIConfig,
@@ -123,6 +124,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
   return (
     <div
       className="flex h-full"
+      onMouseDown={stopDragPropagation}
       style={{
         background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f0f23 100%)',
       }}

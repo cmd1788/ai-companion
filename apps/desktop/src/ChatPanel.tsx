@@ -99,6 +99,7 @@ export function ChatPanel() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { aiConfig, messages, addMessage, updateEmotionFromChat, memories, setCurrentExpression, networkSettings } = useAppStore();
   const msgCount = messages.length;
+  const stopDragPropagation = (e: React.MouseEvent) => e.stopPropagation();
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -109,7 +110,7 @@ export function ChatPanel() {
   }, [messages]);
 
   // 构建带记忆的系统提示
-  const buildSystemPrompt = (networkContext?: {query: string; results: string}) => {
+  const buildSystemPrompt = (networkContext?: {query: string; results: string; source?: string}) => {
     const { characterSettings, memories } = useAppStore.getState();
     const personalities = characterSettings.personality.join('、');
     let prompt = `你是${characterSettings.name}，一个${personalities}的AI少女。你用~呀啦哦呢嘿等语气词结尾。不要太长，保持活泼俏皮的风格。
@@ -137,7 +138,7 @@ export function ChatPanel() {
   };
 
   // 带工具调用的API调用
-  const callMiniMax = async (userMessage: string, networkContext?: {query: string; results: string}): Promise<string> => {
+  const callMiniMax = async (userMessage: string, networkContext?: {query: string; results: string; source?: string}): Promise<string> => {
     // 必须从 getState() 获取，确保读取最新的 API key
     const { apiKey } = useAppStore.getState().aiConfig;
     if (!apiKey) {
@@ -148,14 +149,16 @@ export function ChatPanel() {
     // [AI_PROMPT_DEBUG] - 验证网络上下文是否正确注入
     const hasNetworkContext = !!networkContext;
     const networkResultCount = networkContext?.results ? networkContext.results.split('\n\n').length : 0;
-    const networkSource = 'mock'; // source 从 searchResult 传递，这里简化
+    const networkSource = networkContext?.source || 'none';
     const builtSystemPrompt = buildSystemPrompt(networkContext);
     const promptIncludesNetworkResults = hasNetworkContext && builtSystemPrompt.includes('联网搜索信息');
     const promptIncludesNoInternetFallback = builtSystemPrompt.includes('不能联网') || builtSystemPrompt.includes('无法联网') || builtSystemPrompt.includes('没有联网');
-    const conversationHistory = messages.map(m => ({
-      role: m.role as 'user' | 'assistant',
-      content: m.content
-    }));
+    const conversationHistory = messages
+      .filter(m => m.role === 'user' || m.role === 'assistant')
+      .map(m => ({
+        role: m.role as 'user' | 'assistant',
+        content: m.content
+      }));
     const finalMessagesCount = 2 + conversationHistory.length; // system + user + history
 
     console.log('[AI_PROMPT_DEBUG] hasNetworkContext=', hasNetworkContext);
@@ -227,7 +230,7 @@ export function ChatPanel() {
     // 兼容处理：MiniMax模型通常在reasoning_content中返回实际回复
     // 如果content太短(<50字符)但reasoning_content更长，使用reasoning_content
     let replyContent = content;
-    if (!content || content.length < 50) {
+    if (!content || (content.length < 50 && reasoningContent.length > content.length)) {
       replyContent = reasoningContent || content;
     }
     
@@ -304,7 +307,7 @@ export function ChatPanel() {
     const currentNetworkSettings = useAppStore.getState().networkSettings;
     
     // 检查是否需要联网搜索
-    let networkContext: {query: string; results: string} | undefined;
+    let networkContext: {query: string; results: string; source?: string} | undefined;
     let networkSearchData: {query: string; resultCount: number; source: string} | null = null;
     
     if (currentNetworkSettings.enableWebSearch && runtime.network?.shouldTrigger(userMessage)) {
@@ -326,6 +329,7 @@ export function ChatPanel() {
         networkContext = {
           query: searchResult.query,
           results: formattedResults,
+          source: searchResult.source,
         };
         
         networkSearchData = {
@@ -389,7 +393,7 @@ export function ChatPanel() {
   };
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full" onMouseDown={stopDragPropagation}>
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
         {messages.length === 0 && (
           <div className="text-center text-sm" style={{ color: '#a0a0a0' }}>
@@ -452,12 +456,14 @@ export function ChatPanel() {
 
       <div
         className="flex items-center gap-2 p-3"
+        onMouseDown={stopDragPropagation}
         style={{
           background: 'rgba(0, 0, 0, 0.2)',
           borderTop: '1px solid rgba(255, 255, 255, 0.1)',
         }}
       >
         <input
+          onMouseDown={stopDragPropagation}
           type="text"
           value={input}
           onChange={(e) => setInput(e.target.value)}
@@ -471,6 +477,7 @@ export function ChatPanel() {
           }}
         />
         <button
+          onMouseDown={stopDragPropagation}
           onClick={handleSend}
           disabled={!input.trim() || isLoading}
           className="w-10 h-10 rounded-full flex items-center justify-center transition-all"

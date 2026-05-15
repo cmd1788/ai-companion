@@ -13,6 +13,7 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [runtimeStatus, setRuntimeStatus] = useState<any>(null);
   const { initDB, dbReady, styleSettings } = useAppStore();
+  const stopDragPropagation = (e: React.MouseEvent) => e.stopPropagation();
 
   useEffect(() => {
     // 初始化 Runtime（必须在 React 挂载前完成）
@@ -86,6 +87,7 @@ export default function App() {
     return (
       <div
         className="relative flex flex-col h-full select-none"
+        onMouseDown={stopDragPropagation}
         style={{
           width: '100%',
           height: '100%',
@@ -110,6 +112,7 @@ export default function App() {
     >
       {/* 左上角设置按钮 */}
       <button
+        onMouseDown={stopDragPropagation}
         onClick={() => setSettingsOpen(true)}
         className="absolute top-2 left-2 z-50 w-8 h-8 flex items-center justify-center rounded-lg"
         style={{
@@ -135,7 +138,7 @@ export default function App() {
       )}
 
       {/* 主内容 */}
-      <div className="flex flex-col flex-1 overflow-hidden">
+      <div className="flex flex-col flex-1 overflow-hidden" onMouseDown={stopDragPropagation}>
         {/* 情绪指标条 */}
         {styleSettings.showEmotionBar && <EmotionDisplay />}
 
@@ -161,12 +164,14 @@ export default function App() {
       {styleSettings.showToolbar && (
         <div
           className="flex items-center justify-center py-2"
+          onMouseDown={stopDragPropagation}
           style={{
             background: 'rgba(0, 0, 0, 0.3)',
             borderTop: '1px solid rgba(255, 255, 255, 0.1)',
           }}
         >
           <button
+            onMouseDown={stopDragPropagation}
             onClick={() => setSettingsOpen(true)}
             className="flex flex-col items-center gap-0.5 px-6 py-1"
           >

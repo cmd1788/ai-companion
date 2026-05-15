@@ -2,6 +2,7 @@
 // 自动检测运行环境，选择 Tauri 或 Browser 实现
 
 import type { RuntimeMode, RuntimeStatus, Message, MemoryItem, EmotionState, RuntimeStateExport, InvokeResult, NetworkProvider, NetworkSearchResponse, NetworkStatus } from './runtimeTypes';
+import { isTauri as isTauriApi } from '@tauri-apps/api/core';
 import { tauriAdapter } from './tauriAdapter';
 import { browserAdapter } from './browserAdapter';
 import { mcpBridge } from './mcpBridge';
@@ -30,15 +31,15 @@ function detectRuntime(): RuntimeMode {
     if (userAgent.includes('Playwright') || userAgent.includes('Puppeteer')) {
       return 'TEST';
     }
+
+    // Tauri v2 does not expose window.__TAURI__ unless withGlobalTauri is enabled.
+    if (isTauriApi() || typeof (window as any).__TAURI__ !== 'undefined' || typeof (globalThis as any).isTauri !== 'undefined') {
+      return 'TAURI';
+    }
     
     // 检查 localhost
     if (window.location?.hostname === 'localhost' || window.location?.hostname === '127.0.0.1') {
       return 'BROWSER_DEV';
-    }
-    
-    // 检查 Tauri
-    if (typeof (window as any).__TAURI__ !== 'undefined') {
-      return 'TAURI';
     }
   }
   return 'UNKNOWN';
@@ -264,6 +265,7 @@ async function networkSearch(
 ): Promise<NetworkSearchResponse> {
   const provider = options?.provider || networkStatus.provider || 'minimax_web_search';
   const maxResults = options?.maxResults || 5;
+  const startedAt = Date.now();
   
   networkStatus.lastQuery = query;
   networkStatus.requestCount++;
@@ -287,15 +289,20 @@ async function networkSearch(
   // Tauri 模式 - 尝试真实联网（优先使用 minimax_web_search provider）
   if (isTauriRuntime() && provider !== 'mock') {
     // 获取 API Key 并传递给 Tauri 后端
-    const apiKey = useAppStore.getState()?.apiSettings?.apiKey;
-    const result = await tauriAdapter.webSearch(query, maxResults, apiKey);
+    const apiKey = useAppStore.getState()?.aiConfig?.apiKey;
+    const result = await tauriAdapter.webSearch(query, apiKey);
     if (result.ok && result.data) {
+      const results = (result.data.results || []).slice(0, maxResults);
+      const duration = Date.now() - startedAt;
       networkStatus.lastSuccessAt = Date.now();
       networkStatus.source = 'tauri';
+      networkLog.add(query, provider, results.length, true, undefined, duration);
+      console.log(`[Runtime.network] provider=${provider} is_mock=false result_count=${results.length}`);
       return {
+        ok: true,
         query,
-        results: result.data.results || [],
-        source: 'tauri',
+        results,
+        source: (result.data.source || 'tauri') as any,
         timestamp: Date.now(),
       };
     }
@@ -359,7 +366,7 @@ async function networkSearch(
       } else if (provider === 'minimax_web_search') {
         // MiniMax 独立 Web Search - 直接调用 MiniMax REST API，不依赖 OpenClaw
         console.log(`[Runtime.network] Using minimax_web_search provider (direct API)`);
-        response = await browserAdapter.searchMiniMaxMCP(query, provider, maxResults);
+        response = await browserAdapter.network.searchMiniMaxMCP(query, provider, maxResults);
         if (!response.ok) {
           response.degraded = true;
         }

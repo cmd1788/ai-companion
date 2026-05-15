@@ -80,7 +80,7 @@ interface RustSearchResult {
 
 export async function webSearch(query: string, apiKey?: string): Promise<InvokeResult<NetworkSearchResponse>> {
   try {
-    const result = await invokeSafe<RustSearchResult>('web_search', { query, api_key: apiKey || null });
+    const result = await invokeSafe<RustSearchResult>('web_search', { query, apiKey: apiKey || null });
 
     if (!result.ok || !result.data) {
       return {
