@@ -107,16 +107,56 @@ export function getNetworkLogStats(): {
 }
 
 // 检查是否应该触发联网搜索
-export function shouldTriggerWebSearch(message: string): boolean {
-  const triggers = [
-    '搜索', '查一下', '最新', '今天', '新闻',
-    '官网', '资料', '价格', '天气', '结果',
-    '比赛', '股票', '比分', '比分直播', '什么是',
-    '如何', '怎么', '教程', '推荐', '排行榜',
-  ];
+export interface WebSearchTriggerMatch {
+  shouldTrigger: boolean;
+  matchedRule: string;
+  matchedKeyword: string;
+}
 
-  const lowerMessage = message.toLowerCase();
-  return triggers.some(trigger => lowerMessage.includes(trigger));
+const TRIGGER_GROUPS = [
+  {
+    rule: 'explicit_search_intent',
+    keywords: ['联网搜索', '搜索', '搜一下', '帮我搜', '查一下', '查询', '查找', '最新', '当前', '现在', '资料', '官网'],
+  },
+  {
+    rule: 'external_source_keyword',
+    keywords: ['github', '项目', '仓库', 'repo', 'repository', 'release', 'releases', '插件', '开源'],
+  },
+  {
+    rule: 'time_sensitive',
+    keywords: ['今天', '最近', '当前版本', '价格', '天气', '新闻', '比赛', '股票'],
+  },
+];
+
+export function analyzeWebSearchTrigger(message: string): WebSearchTriggerMatch {
+  const query = (message || '').trim();
+  const lowerMessage = query.toLowerCase();
+
+  if (/https?:\/\//i.test(query)) {
+    return { shouldTrigger: true, matchedRule: 'url', matchedKeyword: query.match(/https?:\/\//i)?.[0] || 'url' };
+  }
+
+  if (lowerMessage.includes('github.com')) {
+    return { shouldTrigger: true, matchedRule: 'url', matchedKeyword: 'github.com' };
+  }
+
+  const repoMatch = query.match(/\b[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\b/);
+  if (repoMatch) {
+    return { shouldTrigger: true, matchedRule: 'owner_repo_format', matchedKeyword: repoMatch[0] };
+  }
+
+  for (const group of TRIGGER_GROUPS) {
+    const keyword = group.keywords.find(item => lowerMessage.includes(item.toLowerCase()));
+    if (keyword) {
+      return { shouldTrigger: true, matchedRule: group.rule, matchedKeyword: keyword };
+    }
+  }
+
+  return { shouldTrigger: false, matchedRule: 'none', matchedKeyword: '' };
+}
+
+export function shouldTriggerWebSearch(message: string): boolean {
+  return analyzeWebSearchTrigger(message).shouldTrigger;
 }
 
 // Network Log API
@@ -126,5 +166,6 @@ export const networkLog = {
   clear: clearNetworkLogs,
   export: exportNetworkLogs,
   getStats: getNetworkLogStats,
+  analyzeTrigger: analyzeWebSearchTrigger,
   shouldTriggerWebSearch,
 };

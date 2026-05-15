@@ -34,6 +34,8 @@ function resetNetworkSettingsToDefault(currentSettings: NetworkSettings): Networ
     ...currentSettings,
     provider: 'minimax_web_search',
     enableWebSearch: true,
+    enableImageGen: currentSettings.enableImageGen ?? false,
+    imageOutputPath: currentSettings.imageOutputPath ?? '',
     settingsVersion: 2,
   };
 }
@@ -166,6 +168,8 @@ interface CharacterSettings {
 // 联网设置接口
 interface NetworkSettings {
   enableWebSearch: boolean;     // 开启联网搜索
+  enableImageGen: boolean;       // 开启图片生成
+  imageOutputPath: string;      // 图片输出目录
   provider: 'minimax_web_search' | 'minimax' | 'fetch' | 'mock' | 'disabled' | 'minimax_mcp_bridge' | 'minimax_agent' | 'github_api' | 'openclaw_bridge' | 'mcp_bridge';  // 联网供应商
   maxResults: number;           // 搜索结果数量
   autoSummarize: boolean;       // 自动总结网页
@@ -379,6 +383,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   // 联网设置默认值（从 localStorage 加载）
   networkSettings: loadNetworkSettingsFromStorage() || {
     enableWebSearch: true,  // 默认开启联网搜索
+    enableImageGen: false,  // 默认关闭图片生成
+    imageOutputPath: '',
     provider: 'minimax_web_search',
     maxResults: 5,
     autoSummarize: true,

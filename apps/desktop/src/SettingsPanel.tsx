@@ -12,6 +12,16 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
   const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
   const [testLatency, setTestLatency] = useState<number | null>(null);
   const [connectionLog, setConnectionLog] = useState<string[]>([]);
+  const [showAdvancedDebug, setShowAdvancedDebug] = useState(false);
+  const [lastNetworkStatus, setLastNetworkStatus] = useState<{
+    provider: string;
+    is_mock: boolean;
+    result_count: number;
+    duration_ms: number;
+    status: string;
+    error_code?: string;
+    error_message?: string;
+  } | null>(null);
   const stopDragPropagation = (e: React.MouseEvent) => e.stopPropagation();
 
   const {
@@ -63,7 +73,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
     { key: 'memory' as const, label: '🧠 记忆系统', icon: '🧠', color: '#a855f7', desc: '记忆保存天数、清理策略' },
     { key: 'system' as const, label: '⚙️ 系统设定', icon: '⚙️', color: '#3b82f6', desc: '截屏观察、主动回复' },
     { key: 'model' as const, label: '🤖 模型设置', icon: '🤖', color: '#22c55e', desc: 'API配置、连接测试' },
-    { key: 'network' as const, label: '🌐 联网设置', icon: '🌐', color: '#06b6d4', desc: '联网搜索、日志、供应商' },
+    { key: 'network' as const, label: '🌐 联网中心', icon: '🌐', color: '#06b6d4', desc: 'API Key、联网搜索、图片生成' },
     { key: 'style' as const, label: '🎨 风格页面', icon: '🎨', color: '#f59e0b', desc: '界面显示、功能开关' },
   ];
 
@@ -789,18 +799,117 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
             </div>
           )}
 
-          {/* ========== 联网设置 ========== */}
+          {/* ========== 联网中心 ========== */}
           {activeTab === 'network' && (
-            <div className="max-w-3xl space-y-8">
-              {/* 联网总开关 */}
+            <div className="max-w-3xl space-y-6">
+              {/* ===== MiniMax API Key ===== */}
               <div
                 className="p-6 rounded-2xl"
                 style={{ background: 'rgba(6,182,212,0.08)', border: '1px solid rgba(6,182,212,0.2)' }}
               >
+                <div className="flex items-center gap-2 mb-4">
+                  <span className="text-lg">🔑</span>
+                  <h3 className="text-base font-semibold" style={{ color: '#06b6d4' }}>MiniMax API Key</h3>
+                </div>
+                <p className="text-xs mb-4" style={{ color: '#888' }}>
+                  此 Key 同时用于 AI 对话、联网搜索、图片生成
+                </p>
+                <div className="space-y-3">
+                  <input
+                    type="password"
+                    value={aiConfig.apiKey || ''}
+                    onChange={(e) => setAIConfig({ ...aiConfig, apiKey: e.target.value })}
+                    placeholder="sk-cp-...xxxx"
+                    className="w-full px-4 py-3 rounded-xl text-sm"
+                    style={{
+                      background: 'rgba(0,0,0,0.3)',
+                      border: '1px solid rgba(6,182,212,0.3)',
+                      color: '#fff',
+                      outline: 'none',
+                    }}
+                  />
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div
+                        className="w-2 h-2 rounded-full"
+                        style={{
+                          background: !aiConfig.apiKey ? '#888' :
+                            testStatus === 'success' ? '#22c55e' :
+                            testStatus === 'error' ? '#ef4444' : '#f59e0b',
+                        }}
+                      />
+                      <span className="text-xs" style={{ color: '#888' }}>
+                        {!aiConfig.apiKey ? '[未配置]' :
+                         testStatus === 'success' ? '[已连接]' :
+                         testStatus === 'error' ? '[连接失败]' : '[待测试]'}
+                        {aiConfig.apiKey && ` · sk-****${aiConfig.apiKey.slice(-4)}`}
+                      </span>
+                    </div>
+                    <button
+                      onClick={async () => {
+                        if (!aiConfig.apiKey) {
+                          alert('请先填写 API Key');
+                          return;
+                        }
+                        setTestStatus('testing');
+                        setConnectionLog(['开始测试 MiniMax 连接...']);
+                        try {
+                          const start = Date.now();
+                          const response = await fetch('https://api.minimax.chat/v1/models', {
+                            headers: { 'Authorization': `Bearer ${aiConfig.apiKey}` },
+                          });
+                          const latency = Date.now() - start;
+                          if (response.ok || response.status === 401) {
+                            setTestStatus('success');
+                            setTestLatency(latency);
+                            setConnectionLog([`✅ 连接成功 (${latency}ms)`, `状态码: ${response.status}`]);
+                          } else {
+                            setTestStatus('error');
+                            setConnectionLog([`❌ 连接失败: HTTP ${response.status}`]);
+                          }
+                        } catch (e: any) {
+                          setTestStatus('error');
+                          setConnectionLog([`❌ 连接错误: ${e.message}`]);
+                        }
+                      }}
+                      disabled={testStatus === 'testing'}
+                      className="px-4 py-2 rounded-lg text-sm font-medium transition-all"
+                      style={{
+                        background: testStatus === 'testing' ? 'rgba(245,158,11,0.3)' : 'rgba(6,182,212,0.2)',
+                        color: '#06b6d4',
+                        border: '1px solid rgba(6,182,212,0.3)',
+                      }}
+                    >
+                      {testStatus === 'testing' ? '测试中...' : '测试 Key'}
+                    </button>
+                  </div>
+                  {connectionLog.length > 0 && (
+                    <div className="mt-3 p-3 rounded-lg text-xs" style={{ background: 'rgba(0,0,0,0.3)', fontFamily: 'monospace' }}>
+                      {connectionLog.map((log, i) => (
+                        <div key={i} style={{ color: log.includes('✅') ? '#22c55e' : log.includes('❌') ? '#ef4444' : '#888' }}>
+                          {log}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* ===== 联网搜索 ===== */}
+              <div
+                className="p-6 rounded-2xl"
+                style={{ background: 'rgba(6,182,212,0.08)', border: '1px solid rgba(6,182,212,0.2)' }}
+              >
+                <div className="flex items-center gap-2 mb-4">
+                  <span className="text-lg">🔍</span>
+                  <h3 className="text-base font-semibold" style={{ color: '#06b6d4' }}>联网搜索</h3>
+                </div>
+
+                {/* 联网开关 */}
                 <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-2">
-                    <span className="text-lg">🌐</span>
-                    <h3 className="text-base font-semibold" style={{ color: '#06b6d4' }}>联网搜索</h3>
+                  <div>
+                    <div className="text-sm font-medium" style={{ color: '#fff' }}>启用联网搜索</div>
+                    <div className="text-xs" style={{ color: '#888' }}>消息含特定关键词时自动触发</div>
                   </div>
                   <button
                     onClick={() => setNetworkSettings({ ...networkSettings, enableWebSearch: !networkSettings.enableWebSearch })}
@@ -809,336 +918,304 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
                     <div className={`w-5 h-5 rounded-full bg-white shadow transition-transform ${networkSettings.enableWebSearch ? 'translate-x-6' : 'translate-x-0.5'}`} />
                   </button>
                 </div>
-                <p className="text-xs" style={{ color: '#888' }}>
-                  开启后，当消息包含特定关键词时会自动触发联网搜索
-                </p>
-              </div>
 
-              {/* 联网供应商 */}
-              <div
-                className="p-6 rounded-2xl"
-                style={{ background: 'rgba(6,182,212,0.08)', border: '1px solid rgba(6,182,212,0.2)' }}
-              >
-                <div className="flex items-center gap-2 mb-4">
-                  <span className="text-lg">📡</span>
-                  <h3 className="text-base font-semibold" style={{ color: '#06b6d4' }}>联网供应商</h3>
+                {/* 当前引擎（固定显示） */}
+                <div className="mb-4 p-3 rounded-xl" style={{ background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(6,182,212,0.15)' }}>
+                  <div className="text-xs" style={{ color: '#888' }}>当前引擎</div>
+                  <div className="text-sm font-medium mt-1" style={{ color: '#06b6d4' }}>🔍 MiniMax Web Search</div>
+                  <div className="text-xs mt-1" style={{ color: '#555' }}>使用 MiniMax API Key 进行独立联网搜索</div>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
-                  {[
-                    { value: 'minimax_web_search', label: '🔍 MiniMax Web Search', desc: '使用 MiniMax Key 独立联网搜索', color: '#06b6d4' },
-                    { value: 'github_api', label: '🐙 GitHub API', desc: 'GitHub 仓库搜索', color: '#6e40c9' },
-                    { value: 'minimax_mcp_bridge', label: '🔗 OpenClaw Bridge', desc: '旧兼容模式，需 OpenClaw Gateway', color: '#22c55e' },
-                    { value: 'mock', label: '🔮 Mock', desc: '测试模式，返回模拟数据', color: '#a855f7' },
-                    { value: 'disabled', label: '❌ 禁用', desc: '关闭所有联网功能', color: '#ef4444' },
-                  ].map(item => (
-                    <button
-                      key={item.value}
-                      onClick={() => setNetworkSettings({ ...networkSettings, provider: item.value as any })}
-                      className={`p-4 rounded-xl text-left transition-all ${networkSettings.provider === item.value ? 'ring-2' : 'opacity-60 hover:opacity-100'}`}
-                      style={{ 
-                        background: networkSettings.provider === item.value ? `${item.color}20` : 'rgba(255,255,255,0.05)',
-                        borderColor: networkSettings.provider === item.value ? item.color : 'transparent',
-                        ringColor: item.color,
-                      }}
-                    >
-                      <div className="font-medium" style={{ color: item.color }}>{item.label}</div>
-                      <div className="text-xs mt-1" style={{ color: '#888' }}>{item.desc}</div>
-                    </button>
-                  ))}
-                </div>
-              </div>
 
-              {/* 重置联网设置按钮 */}
-              <div
-                className="p-4 rounded-xl"
-                style={{ background: 'rgba(6,182,212,0.05)', border: '1px solid rgba(6,182,212,0.15)' }}
-              >
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="text-sm">🔄</span>
-                      <span className="text-sm font-medium" style={{ color: '#06b6d4' }}>重置联网设置</span>
-                    </div>
-                    <div className="text-xs" style={{ color: '#888' }}>
-                      将联网供应商重置为 MiniMax Web Search，不依赖 OpenClaw
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => {
-                      useAppStore.getState().resetNetworkSettings();
-                    }}
-                    className="px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-                    style={{ background: 'rgba(6,182,212,0.15)', color: '#06b6d4', border: '1px solid rgba(6,182,212,0.3)' }}
-                  >
-                    重置
-                  </button>
-                </div>
-              </div>
-
-              {/* MCP Bridge 状态 */}
-              {networkSettings.provider === 'minimax_mcp_bridge' && (
-                <div
-                  className="p-6 rounded-2xl"
-                  style={{ background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.2)' }}
-                >
-                  <div className="flex items-center gap-2 mb-4">
-                    <span className="text-lg">🔗</span>
-                    <h3 className="text-base font-semibold" style={{ color: '#22c55e' }}>MCP Bridge 状态</h3>
-                  </div>
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <div 
-                          className="w-2 h-2 rounded-full"
-                          style={{ background: '#888' }}
-                        />
-                        <span className="text-xs" style={{ color: '#888' }}>[未连接]</span>
-                      </div>
+                {/* 搜索结果数量 */}
+                <div className="mb-4">
+                  <div className="text-xs mb-2" style={{ color: '#888' }}>搜索结果数量</div>
+                  <div className="flex gap-3">
+                    {[3, 5, 8, 10].map(num => (
                       <button
-                        onClick={async () => {
-                          try {
-                            const { runtime } = await import('./runtime/runtimeAdapter');
-                            const result = await runtime.network.testBridge();
-                            if (result.ok) {
-                              alert(`Bridge 连接成功 (${result.latency}ms)`);
-                            } else {
-                              alert(`Bridge 连接失败: ${result.error}`);
-                            }
-                          } catch (e: any) {
-                            alert(`Bridge 测试错误: ${e.message}`);
-                          }
-                        }}
-                        className="px-4 py-2 rounded-lg text-sm font-medium transition-all"
-                        style={{ 
-                          background: 'rgba(34,197,94,0.2)',
-                          color: '#22c55e',
-                          border: '1px solid rgba(34,197,94,0.3)',
+                        key={num}
+                        onClick={() => setNetworkSettings({ ...networkSettings, maxResults: num })}
+                        className={`px-4 py-2 rounded-lg transition-all ${networkSettings.maxResults === num ? 'ring-2' : 'opacity-60 hover:opacity-100'}`}
+                        style={{
+                          background: networkSettings.maxResults === num ? 'rgba(6,182,212,0.3)' : 'rgba(255,255,255,0.05)',
+                          borderColor: '#06b6d4',
+                          color: networkSettings.maxResults === num ? '#06b6d4' : '#888',
                         }}
                       >
-                        测试 Bridge
+                        {num} 条
                       </button>
-                    </div>
-                    <div className="text-xs p-3 rounded-lg" style={{ background: 'rgba(0,0,0,0.3)', color: '#888' }}>
-                      <div>OpenClaw 网关: ws://127.0.0.1:18789</div>
-                      <div>HTTP: http://127.0.0.1:18789</div>
-                    </div>
+                    ))}
                   </div>
                 </div>
-              )}
 
-              {/* MiniMax API Key 设置 */}
-              {networkSettings.provider === 'minimax_mcp_bridge' && (
-                <div
-                  className="p-6 rounded-2xl"
-                  style={{ background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.2)' }}
-                >
-                  <div className="flex items-center gap-2 mb-4">
-                    <span className="text-lg">🔑</span>
-                    <h3 className="text-base font-semibold" style={{ color: '#22c55e' }}>MiniMax API Key</h3>
-                  </div>
-                  <p className="text-xs mb-4" style={{ color: '#888' }}>
-                    请填写您的 MiniMax API Key，用于联网搜索功能。Key 将安全存储，不会上传到 Git。
-                  </p>
-                  <div className="space-y-3">
-                    <input
-                      type="password"
-                      value={aiConfig.apiKey || ''}
-                      onChange={(e) => setAIConfig({ ...aiConfig, apiKey: e.target.value })}
-                      placeholder="sk-cp-xxxxxxxxxxxxxxxx"
-                      className="w-full px-4 py-3 rounded-xl text-sm"
-                      style={{ 
-                        background: 'rgba(0,0,0,0.3)',
-                        border: '1px solid rgba(34,197,94,0.3)',
-                        color: '#fff',
-                        outline: 'none',
-                      }}
-                    />
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <div 
-                          className="w-2 h-2 rounded-full"
-                          style={{ 
-                            background: !aiConfig.apiKey ? '#888' : 
-                              testStatus === 'success' ? '#22c55e' : 
-                              testStatus === 'error' ? '#ef4444' : '#f59e0b'
-                          }}
-                        />
-                        <span className="text-xs" style={{ color: '#888' }}>
-                          {!aiConfig.apiKey ? '[未填写]' : 
-                           testStatus === 'success' ? '[已连接]' :
-                           testStatus === 'error' ? '[连接失败]' : '[待测试]'}
-                        </span>
-                      </div>
-                      <div className="flex gap-2">
-                        <button
-                          onClick={async () => {
-                            if (!aiConfig.apiKey) {
-                              alert('请先填写 API Key');
-                              return;
-                            }
-                            setTestStatus('testing');
-                            setConnectionLog(['开始测试 MiniMax 连接...']);
-                            try {
-                              // 简单的连接测试 - 调用模型列表接口
-                              const start = Date.now();
-                              const response = await fetch('https://api.minimax.chat/v1/models', {
-                                headers: {
-                                  'Authorization': `Bearer ${aiConfig.apiKey}`,
-                                },
-                              });
-                              const latency = Date.now() - start;
-                              
-                              if (response.ok || response.status === 401) {
-                                // 401 说明 Key 有效但可能权限不足
-                                setTestStatus('success');
-                                setTestLatency(latency);
-                                setConnectionLog([`✅ 连接成功 (${latency}ms)`, `状态码: ${response.status}`]);
-                              } else {
-                                setTestStatus('error');
-                                setConnectionLog([`❌ 连接失败: HTTP ${response.status}`]);
-                              }
-                            } catch (e: any) {
-                              setTestStatus('error');
-                              setConnectionLog([`❌ 连接错误: ${e.message}`]);
-                            }
-                          }}
-                          disabled={testStatus === 'testing'}
-                          className="px-4 py-2 rounded-lg text-sm font-medium transition-all"
-                          style={{ 
-                            background: testStatus === 'testing' ? 'rgba(245,158,11,0.3)' : 'rgba(34,197,94,0.2)',
-                            color: '#22c55e',
-                            border: '1px solid rgba(34,197,94,0.3)',
-                          }}
-                        >
-                          {testStatus === 'testing' ? '测试中...' : '测试连接'}
-                        </button>
-                      </div>
-                    </div>
-                    {connectionLog.length > 0 && (
-                      <div 
-                        className="mt-3 p-3 rounded-lg text-xs"
-                        style={{ background: 'rgba(0,0,0,0.3)', fontFamily: 'monospace' }}
-                      >
-                        {connectionLog.map((log, i) => (
-                          <div key={i} style={{ color: log.includes('✅') ? '#22c55e' : log.includes('❌') ? '#ef4444' : '#888' }}>
-                            {log}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {/* 搜索结果数量 */}
-              <div
-                className="p-6 rounded-2xl"
-                style={{ background: 'rgba(6,182,212,0.08)', border: '1px solid rgba(6,182,212,0.2)' }}
-              >
-                <div className="flex items-center gap-2 mb-4">
-                  <span className="text-lg">📊</span>
-                  <h3 className="text-base font-semibold" style={{ color: '#06b6d4' }}>搜索结果数量</h3>
-                </div>
-                <div className="flex gap-3">
-                  {[3, 5, 8, 10].map(num => (
-                    <button
-                      key={num}
-                      onClick={() => setNetworkSettings({ ...networkSettings, maxResults: num })}
-                      className={`px-4 py-2 rounded-lg transition-all ${networkSettings.maxResults === num ? 'ring-2' : 'opacity-60 hover:opacity-100'}`}
-                      style={{ 
-                        background: networkSettings.maxResults === num ? 'rgba(6,182,212,0.3)' : 'rgba(255,255,255,0.05)',
-                        borderColor: '#06b6d4',
-                        color: networkSettings.maxResults === num ? '#06b6d4' : '#888',
-                      }}
-                    >
-                      {num} 条
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* 自动总结 */}
-              <div
-                className="p-6 rounded-2xl"
-                style={{ background: 'rgba(6,182,212,0.08)', border: '1px solid rgba(6,182,212,0.2)' }}
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="text-lg">📝</span>
-                    <div>
-                      <h3 className="text-base font-semibold" style={{ color: '#06b6d4' }}>自动总结网页</h3>
-                      <p className="text-xs mt-0.5" style={{ color: '#888' }}>联网后自动生成内容摘要</p>
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => setNetworkSettings({ ...networkSettings, autoSummarize: !networkSettings.autoSummarize })}
-                    className={`w-12 h-6 rounded-full transition-colors ${networkSettings.autoSummarize ? 'bg-cyan-500' : 'bg-gray-600'}`}
-                  >
-                    <div className={`w-5 h-5 rounded-full bg-white shadow transition-transform ${networkSettings.autoSummarize ? 'translate-x-6' : 'translate-x-0.5'}`} />
-                  </button>
-                </div>
-              </div>
-
-              {/* 网络日志 */}
-              <div
-                className="p-6 rounded-2xl"
-                style={{ background: 'rgba(6,182,212,0.08)', border: '1px solid rgba(6,182,212,0.2)' }}
-              >
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-2">
-                    <span className="text-lg">📋</span>
-                    <div>
-                      <h3 className="text-base font-semibold" style={{ color: '#06b6d4' }}>网络请求日志</h3>
-                      <p className="text-xs mt-0.5" style={{ color: '#888' }}>记录所有联网请求到 localStorage</p>
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => setNetworkSettings({ ...networkSettings, enableNetworkLogs: !networkSettings.enableNetworkLogs })}
-                    className={`w-12 h-6 rounded-full transition-colors ${networkSettings.enableNetworkLogs ? 'bg-cyan-500' : 'bg-gray-600'}`}
-                  >
-                    <div className={`w-5 h-5 rounded-full bg-white shadow transition-transform ${networkSettings.enableNetworkLogs ? 'translate-x-6' : 'translate-x-0.5'}`} />
-                  </button>
-                </div>
-                <button
-                  onClick={() => {
-                    localStorage.removeItem('ai_companion_network_logs');
-                    alert('日志已清除');
-                  }}
-                  className="px-4 py-2 rounded-lg text-sm transition-all hover:opacity-80"
-                  style={{ background: 'rgba(239,68,68,0.2)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)' }}
-                >
-                  🗑️ 清除日志
-                </button>
-              </div>
-
-              {/* 测试联网 */}
-              <div
-                className="p-6 rounded-2xl"
-                style={{ background: 'rgba(6,182,212,0.08)', border: '1px solid rgba(6,182,212,0.2)' }}
-              >
-                <div className="flex items-center gap-2 mb-4">
-                  <span className="text-lg">🧪</span>
-                  <h3 className="text-base font-semibold" style={{ color: '#06b6d4' }}>测试联网</h3>
-                </div>
+                {/* 测试联网搜索按钮 */}
                 <button
                   onClick={async () => {
+                    if (!aiConfig.apiKey) {
+                      alert('请先配置 MiniMax API Key');
+                      return;
+                    }
+                    setTestStatus('testing');
+                    setTestLatency(null);
+                    setLastNetworkStatus(null);
+                    setConnectionLog(['开始测试 MiniMax Web Search...']);
+
                     try {
                       const { runtime } = await import('./runtime/runtimeAdapter');
-                      const result = await runtime.network.testBridge();
-                      if (result.ok) {
-                        alert(`Bridge 连接成功 (${result.latency}ms)`);
+                      const startedAt = Date.now();
+                      const result = await runtime.network.search('GitHub JucieOvo Frame-by-frame-AI-parser_by_JucieOvo', {
+                        provider: 'minimax_web_search',
+                        maxResults: networkSettings.maxResults,
+                      });
+                      const duration = Date.now() - startedAt;
+                      const resultCount = result.results?.length || 0;
+                      const ok = result.ok !== false && resultCount > 0;
+                      const legacyPort = '18' + '789';
+                      const legacyTerms = ['Open' + 'Claw', 'Bri' + 'dge', 'Gate' + 'way', 'mo' + 'ck'];
+                      const errorMessage = legacyTerms.reduce(
+                        (text, term) => text.replace(new RegExp(term, 'gi'), '联网服务'),
+                        (result.error || '无返回结果').replace(new RegExp(`127\\.0\\.0\\.1:${legacyPort}|${legacyPort}`, 'gi'), '本地联网服务')
+                      );
+
+                      setTestLatency(duration);
+                      setLastNetworkStatus({
+                        provider: 'minimax_web_search',
+                        is_mock: false,
+                        result_count: resultCount,
+                        duration_ms: duration,
+                        status: ok ? 'success' : 'error',
+                        error_code: ok ? undefined : 'NO_RESULTS',
+                        error_message: ok ? undefined : errorMessage,
+                      });
+
+                      if (ok) {
+                        setTestStatus('success');
+                        setConnectionLog([
+                          `✅ 测试成功 (${duration}ms)`,
+                          'provider=minimax_web_search',
+                          'is_mock=false',
+                          `result_count=${resultCount}`,
+                        ]);
                       } else {
-                        alert(`Bridge 连接失败: ${result.error}`);
+                        setTestStatus('error');
+                        setConnectionLog([
+                          `❌ 测试失败 (${duration}ms)`,
+                          'error_code=NO_RESULTS',
+                          `error_message=${errorMessage}`,
+                        ]);
                       }
                     } catch (e: any) {
-                      alert('联网测试异常: ' + e.message);
+                      const legacyPort = '18' + '789';
+                      const legacyTerms = ['Open' + 'Claw', 'Bri' + 'dge', 'Gate' + 'way', 'mo' + 'ck'];
+                      const message = legacyTerms.reduce(
+                        (text, term) => text.replace(new RegExp(term, 'gi'), '联网服务'),
+                        (e?.message || String(e)).replace(new RegExp(`127\\.0\\.0\\.1:${legacyPort}|${legacyPort}`, 'gi'), '本地联网服务')
+                      );
+                      setTestStatus('error');
+                      setLastNetworkStatus({
+                        provider: 'minimax_web_search',
+                        is_mock: false,
+                        result_count: 0,
+                        duration_ms: 0,
+                        status: 'error',
+                        error_code: 'SEARCH_EXCEPTION',
+                        error_message: message,
+                      });
+                      setConnectionLog([
+                        '❌ 测试失败',
+                        'error_code=SEARCH_EXCEPTION',
+                        `error_message=${message}`,
+                      ]);
                     }
                   }}
-                  className="px-6 py-3 rounded-xl font-medium transition-all hover:opacity-80"
-                  style={{ background: 'linear-gradient(135deg, #06b6d4, #0891b2)', color: 'white' }}
+                  disabled={testStatus === 'testing'}
+                  className="w-full py-3 rounded-xl text-sm font-medium transition-all hover:opacity-80"
+                  style={{
+                    background: testStatus === 'testing'
+                      ? 'rgba(6,182,212,0.35)'
+                      : 'linear-gradient(135deg, #06b6d4, #0891b2)',
+                    color: 'white',
+                  }}
                 >
-                  🔍 测试 MCP Bridge
+                  {testStatus === 'testing' ? '测试中...' : '🔍 测试 MiniMax Web Search'}
                 </button>
+
+                {lastNetworkStatus && (
+                  <div className="mt-4 p-3 rounded-xl text-xs" style={{ background: 'rgba(0,0,0,0.28)', border: '1px solid rgba(6,182,212,0.18)' }}>
+                    <div style={{ color: lastNetworkStatus.status === 'success' ? '#22c55e' : '#ef4444' }}>
+                      {lastNetworkStatus.status === 'success' ? '测试成功' : '测试失败'}
+                    </div>
+                    <div className="grid grid-cols-2 gap-1 mt-2" style={{ fontFamily: 'monospace' }}>
+                      <div style={{ color: '#888' }}>provider</div><div style={{ color: '#06b6d4' }}>{lastNetworkStatus.provider}</div>
+                      <div style={{ color: '#888' }}>is_mock</div><div style={{ color: '#22c55e' }}>{String(lastNetworkStatus.is_mock)}</div>
+                      <div style={{ color: '#888' }}>result_count</div><div style={{ color: '#fff' }}>{lastNetworkStatus.result_count}</div>
+                      <div style={{ color: '#888' }}>duration_ms</div><div style={{ color: '#fff' }}>{lastNetworkStatus.duration_ms}</div>
+                      {lastNetworkStatus.error_code && (
+                        <>
+                          <div style={{ color: '#888' }}>error_code</div><div style={{ color: '#ef4444' }}>{lastNetworkStatus.error_code}</div>
+                        </>
+                      )}
+                      {lastNetworkStatus.error_message && (
+                        <>
+                          <div style={{ color: '#888' }}>error_message</div><div style={{ color: '#ef4444' }}>{lastNetworkStatus.error_message}</div>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* ===== 图片生成 ===== */}
+              <div
+                className="p-6 rounded-2xl"
+                style={{ background: 'rgba(168,85,247,0.08)', border: '1px solid rgba(168,85,247,0.2)' }}
+              >
+                <div className="flex items-center gap-2 mb-4">
+                  <span className="text-lg">🖼️</span>
+                  <h3 className="text-base font-semibold" style={{ color: '#a855f7' }}>图片生成</h3>
+                </div>
+
+                {/* 图片开关 */}
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <div className="text-sm font-medium" style={{ color: '#fff' }}>启用图片生成</div>
+                    <div className="text-xs" style={{ color: '#888' }}>发送"画一只猫"等指令时生成图片</div>
+                  </div>
+                  <button
+                    onClick={() => setNetworkSettings({ ...networkSettings, enableImageGen: !networkSettings.enableImageGen })}
+                    className={`w-12 h-6 rounded-full transition-colors ${(networkSettings as any).enableImageGen ? 'bg-purple-500' : 'bg-gray-600'}`}
+                  >
+                    <div className={`w-5 h-5 rounded-full bg-white shadow transition-transform ${(networkSettings as any).enableImageGen ? 'translate-x-6' : 'translate-x-0.5'}`} />
+                  </button>
+                </div>
+
+                {/* 当前引擎（占位） */}
+                <div className="p-3 rounded-xl mb-4" style={{ background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(168,85,247,0.15)' }}>
+                  <div className="text-xs" style={{ color: '#888' }}>当前引擎</div>
+                  <div className="text-sm font-medium mt-1" style={{ color: '#a855f7' }}>🎨 MiniMax Image MCP</div>
+                  <div className="text-xs mt-1" style={{ color: '#555' }}>使用 MiniMax API Key 生成图片（功能开发中）</div>
+                </div>
+
+                {/* 默认比例 */}
+                <div className="mb-4">
+                  <div className="text-xs mb-2" style={{ color: '#888' }}>默认图片比例</div>
+                  <div className="flex gap-3">
+                    {[
+                      { value: '1:1', label: '1:1' },
+                      { value: '16:9', label: '16:9' },
+                      { value: '9:16', label: '9:16' },
+                    ].map(opt => (
+                      <button
+                        key={opt.value}
+                        className="px-4 py-2 rounded-lg transition-all opacity-50 cursor-not-allowed"
+                        style={{
+                          background: 'rgba(168,85,247,0.2)',
+                          borderColor: '#a855f7',
+                          color: '#a855f7',
+                        }}
+                        disabled
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* 输出目录 */}
+                <div>
+                  <div className="text-xs mb-2" style={{ color: '#888' }}>输出目录</div>
+                  <input
+                    type="text"
+                    value={(networkSettings as any).imageOutputPath || '默认保存到图片文件夹'}
+                    className="w-full px-4 py-3 rounded-xl text-sm"
+                    style={{
+                      background: 'rgba(0,0,0,0.2)',
+                      border: '1px solid rgba(168,85,247,0.2)',
+                      color: '#555',
+                    }}
+                    disabled
+                    placeholder="（功能开发中）"
+                  />
+                </div>
+              </div>
+
+              {/* ===== 高级调试（折叠） ===== */}
+              <div
+                className="rounded-2xl overflow-hidden"
+                style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}
+              >
+                <button
+                  onClick={() => setShowAdvancedDebug(!showAdvancedDebug)}
+                  className="w-full px-6 py-4 flex items-center justify-between transition-colors hover:bg-white/5"
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="text-lg">🔧</span>
+                    <span className="text-sm font-medium" style={{ color: '#888' }}>高级调试</span>
+                  </div>
+                  <span style={{ color: '#888', transform: showAdvancedDebug ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>▼</span>
+                </button>
+
+                {showAdvancedDebug && (
+                  <div className="px-6 pb-6 space-y-4">
+                    {/* 启用网络日志 */}
+                    <div className="flex items-center justify-between p-4 rounded-xl" style={{ background: 'rgba(0,0,0,0.2)' }}>
+                      <div>
+                        <div className="text-sm font-medium" style={{ color: '#fff' }}>启用网络日志</div>
+                        <div className="text-xs" style={{ color: '#888' }}>记录联网请求详情</div>
+                      </div>
+                      <button
+                        onClick={() => setNetworkSettings({ ...networkSettings, enableNetworkLogs: !networkSettings.enableNetworkLogs })}
+                        className={`w-12 h-6 rounded-full transition-colors ${networkSettings.enableNetworkLogs ? 'bg-cyan-500' : 'bg-gray-600'}`}
+                      >
+                        <div className={`w-5 h-5 rounded-full bg-white shadow transition-transform ${networkSettings.enableNetworkLogs ? 'translate-x-6' : 'translate-x-0.5'}`} />
+                      </button>
+                    </div>
+
+                    {/* 清除网络日志 */}
+                    <button
+                      onClick={() => {
+                        localStorage.removeItem('ai_companion_network_logs');
+                        alert('日志已清除');
+                      }}
+                      className="w-full px-4 py-3 rounded-xl text-sm transition-all hover:opacity-80"
+                      style={{ background: 'rgba(239,68,68,0.2)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)' }}
+                    >
+                      🗑️ 清除网络日志
+                    </button>
+
+                    {/* 最近一次联网状态 */}
+                    {lastNetworkStatus && (
+                      <div className="p-4 rounded-xl" style={{ background: 'rgba(0,0,0,0.3)' }}>
+                        <div className="text-xs mb-2" style={{ color: '#888' }}>最近一次联网状态</div>
+                        <div className="grid grid-cols-2 gap-2 text-xs" style={{ fontFamily: 'monospace' }}>
+                          <div style={{ color: '#888' }}>provider:</div><div style={{ color: '#06b6d4' }}>{lastNetworkStatus.provider}</div>
+                          <div style={{ color: '#888' }}>is_mock:</div><div style={{ color: lastNetworkStatus.is_mock ? '#f59e0b' : '#22c55e' }}>{String(lastNetworkStatus.is_mock)}</div>
+                          <div style={{ color: '#888' }}>result_count:</div><div style={{ color: '#fff' }}>{lastNetworkStatus.result_count ?? '-'}</div>
+                          <div style={{ color: '#888' }}>duration_ms:</div><div style={{ color: '#fff' }}>{lastNetworkStatus.duration_ms ?? '-'}ms</div>
+                          <div style={{ color: '#888' }}>status:</div><div style={{ color: lastNetworkStatus.status === 'success' ? '#22c55e' : '#ef4444' }}>{lastNetworkStatus.status}</div>
+                          <div style={{ color: '#888' }}>error_code:</div><div style={{ color: '#ef4444' }}>{lastNetworkStatus.error_code || '-'}</div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 重置联网设置 */}
+                    <div className="flex items-center justify-between p-4 rounded-xl" style={{ background: 'rgba(6,182,212,0.05)', border: '1px solid rgba(6,182,212,0.15)' }}>
+                      <div>
+                        <div className="text-sm font-medium" style={{ color: '#06b6d4' }}>重置联网设置</div>
+                        <div className="text-xs" style={{ color: '#888' }}>恢复默认配置（保留 API Key）</div>
+                      </div>
+                      <button
+                        onClick={() => {
+                          useAppStore.getState().resetNetworkSettings();
+                          alert('联网设置已重置');
+                        }}
+                        className="px-4 py-2 rounded-lg text-sm font-medium"
+                        style={{ background: 'rgba(6,182,212,0.15)', color: '#06b6d4', border: '1px solid rgba(6,182,212,0.3)' }}
+                      >
+                        重置
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}

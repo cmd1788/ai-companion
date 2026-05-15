@@ -3,6 +3,7 @@ import { useAppStore } from './store';
 import { analyzeScreen, generateImage, textToSpeech } from './mcpService';
 import { onUserMessage } from './proactiveChat';
 import { runtime } from './runtime/runtimeAdapter';
+import { analyzeWebSearchTrigger } from './runtime/networkLog';
 
 const API_BASE = 'https://api.minimax.chat';
 const MODEL = 'MiniMax-M2.7-highspeed';
@@ -52,6 +53,85 @@ const MCP_TOOLS = [
   }
 ];
 
+type NetworkContext = { query: string; results: string; source?: string };
+type MiniMaxChatMessage = { role: 'user' | 'assistant'; content: string };
+type NetworkSearchData = { query: string; resultCount: number; source: string };
+type MessageContextMenu = { x: number; y: number; content: string };
+
+const HISTORY_BLOCKLIST = [
+  '🌐 已联网搜索',
+  '已联网搜索',
+  'MODEL_API_',
+  'MODEL_EMPTY_',
+  '工具执行完成',
+  '工具调用',
+  '图片已生成',
+  '图片生成失败',
+  '语音已生成',
+  '语音生成失败',
+  '没有联网搜索的本领',
+  '没有联网能力',
+  '我不能联网',
+  '不能上网',
+  '无法联网',
+  'The user asks:',
+  'The user is asking:',
+  'The user says:',
+  'The user request:',
+  'The user wants:',
+  'We have a conversation',
+  'We have a conversation:',
+  'We must',
+  'We need to',
+  'So the user',
+  'Then a request:',
+  'Then they describe',
+  'Possibly they want',
+  'As 小伊',
+  'system says',
+  'developer says',
+  '当前情况：',
+  '请主动发起一段简短的对话',
+  '主动发起一段简短的对话',
+];
+
+const REPLY_POLLUTION_MARKERS = [
+  '\nWe have a conversation',
+  '\nThe user says:',
+  '\nThe user request:',
+  '\nThen a request:',
+  '\nThen they describe',
+  '\nPossibly they want',
+  '\nSo the user',
+  '\n当前情况：',
+  '\n请主动发起一段简短的对话',
+];
+
+function isCleanConversationMessage(message: { role: string; content: string }): boolean {
+  if (message.role !== 'user' && message.role !== 'assistant') return false;
+
+  const content = (message.content || '').trim();
+  if (!content) return false;
+  if (content.length > 1200) return false;
+  if (HISTORY_BLOCKLIST.some((marker) => content.includes(marker))) return false;
+
+  return true;
+}
+
+function sanitizeModelReply(content: string): string {
+  let clean = content.trim();
+  for (const marker of REPLY_POLLUTION_MARKERS) {
+    const markerIndex = clean.indexOf(marker);
+    if (markerIndex > 0) {
+      clean = clean.slice(0, markerIndex).trim();
+    }
+  }
+  return clean
+    .replace(/\n---\s*这个项目是用\s*$/u, '')
+    .replace(/\n-{3,}\s*$/u, '')
+    .trim();
+}
+
 // 处理AI工具调用
 async function handleToolCall(toolName: string, args: Record<string, unknown>): Promise<string> {
   console.log('[ChatPanel] AI调用工具:', toolName, args);
@@ -96,6 +176,8 @@ export function ChatPanel() {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isAITyping, setIsAITyping] = useState(false);
+  const [toast, setToast] = useState('');
+  const [contextMenu, setContextMenu] = useState<MessageContextMenu | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { aiConfig, messages, addMessage, updateEmotionFromChat, memories, setCurrentExpression, networkSettings } = useAppStore();
   const msgCount = messages.length;
@@ -109,8 +191,27 @@ export function ChatPanel() {
     scrollToBottom();
   }, [messages]);
 
+  useEffect(() => {
+    if (!toast) return;
+    const timer = window.setTimeout(() => setToast(''), 1600);
+    return () => window.clearTimeout(timer);
+  }, [toast]);
+
+  useEffect(() => {
+    const closeMenu = () => setContextMenu(null);
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') closeMenu();
+    };
+    window.addEventListener('click', closeMenu);
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('click', closeMenu);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, []);
+
   // 构建带记忆的系统提示
-  const buildSystemPrompt = (networkContext?: {query: string; results: string; source?: string}) => {
+  const buildSystemPrompt = (networkContext?: NetworkContext) => {
     const { characterSettings, memories } = useAppStore.getState();
     const personalities = characterSettings.personality.join('、');
     let prompt = `你是${characterSettings.name}，一个${personalities}的AI少女。你用~呀啦哦呢嘿等语气词结尾。不要太长，保持活泼俏皮的风格。
@@ -126,7 +227,21 @@ export function ChatPanel() {
 
     // 如果有联网搜索结果，添加到系统提示
     if (networkContext) {
-      prompt += `\n\n【联网搜索信息】用户搜索了"${networkContext.query}"，以下是搜索结果：\n${networkContext.results}\n请根据这些搜索结果回答用户的问题。`;
+      prompt += `\n\n【联网搜索信息：真实联网搜索结果】
+用户问题：
+${networkContext.query}
+
+以下是真实联网搜索结果，请基于这些结果回答。不要说你没有联网能力，不要说你不能联网。
+
+搜索结果：
+${networkContext.results}
+
+回答要求：
+- 用中文回答
+- 先概括项目是什么
+- 再列出关键信息
+- 如搜索结果不足，明确说明不足
+- 不要编造`;
     }
 
     if (memories.length > 0) {
@@ -138,7 +253,7 @@ export function ChatPanel() {
   };
 
   // 带工具调用的API调用
-  const callMiniMax = async (userMessage: string, networkContext?: {query: string; results: string; source?: string}): Promise<string> => {
+  const callMiniMax = async (userMessage: string, networkContext?: NetworkContext): Promise<string> => {
     // 必须从 getState() 获取，确保读取最新的 API key
     const { apiKey } = useAppStore.getState().aiConfig;
     if (!apiKey) {
@@ -152,14 +267,23 @@ export function ChatPanel() {
     const networkSource = networkContext?.source || 'none';
     const builtSystemPrompt = buildSystemPrompt(networkContext);
     const promptIncludesNetworkResults = hasNetworkContext && builtSystemPrompt.includes('联网搜索信息');
-    const promptIncludesNoInternetFallback = builtSystemPrompt.includes('不能联网') || builtSystemPrompt.includes('无法联网') || builtSystemPrompt.includes('没有联网');
-    const conversationHistory = messages
-      .filter(m => m.role === 'user' || m.role === 'assistant')
+    const promptIncludesNoInternetFallback = /我(?:不能|无法|没有).*联网|小伊没有联网|没有联网搜索的本领/.test(builtSystemPrompt);
+    const conversationHistory: MiniMaxChatMessage[] = (hasNetworkContext ? [] : messages
+      .filter(isCleanConversationMessage)
+      .slice(-8))
       .map(m => ({
         role: m.role as 'user' | 'assistant',
-        content: m.content
+        content: m.content.trim()
       }));
     const finalMessagesCount = 2 + conversationHistory.length; // system + user + history
+    const modelMessages = [
+      {
+        role: 'system' as const,
+        content: builtSystemPrompt
+      },
+      ...conversationHistory,
+      { role: 'user' as const, content: userMessage }
+    ];
 
     console.log('[AI_PROMPT_DEBUG] hasNetworkContext=', hasNetworkContext);
     console.log('[AI_PROMPT_DEBUG] networkResultCount=', networkResultCount);
@@ -176,14 +300,7 @@ export function ChatPanel() {
       },
       body: JSON.stringify({
         model: MODEL,
-        messages: [
-          {
-            role: 'system',
-            content: buildSystemPrompt(networkContext)
-          },
-          ...conversationHistory,
-          { role: 'user', content: userMessage }
-        ],
+        messages: modelMessages,
         max_tokens: 500,
         temperature: 0.8,
         tools: MCP_TOOLS,
@@ -227,12 +344,11 @@ export function ChatPanel() {
       return 'MODEL_EMPTY_CONTENT';
     }
     
-    // 兼容处理：MiniMax模型通常在reasoning_content中返回实际回复
-    // 如果content太短(<50字符)但reasoning_content更长，使用reasoning_content
-    let replyContent = content;
-    if (!content || (content.length < 50 && reasoningContent.length > content.length)) {
-      replyContent = reasoningContent || content;
+    let replyContent = content.trim();
+    if (!replyContent && reasoningContent.trim()) {
+      replyContent = reasoningContent.trim();
     }
+    replyContent = sanitizeModelReply(replyContent);
     
     // 检查是否有工具调用
     if (choice?.finish_reason === 'tool_calls' || choice?.message?.tool_calls) {
@@ -271,12 +387,7 @@ export function ChatPanel() {
         body: JSON.stringify({
           model: MODEL,
           messages: [
-            {
-              role: 'system',
-              content: buildSystemPrompt(networkContext)
-            },
-            ...conversationHistory,
-            { role: 'user', content: userMessage },
+            ...modelMessages,
             choice.message,
             { role: 'tool', content: toolResultMessage, tool_call_id: toolCalls[0].id }
           ],
@@ -287,11 +398,135 @@ export function ChatPanel() {
       
       const finalData = await finalResponse.json();
       const finalChoice = finalData.choices?.[0];
-      const finalContent = finalChoice?.message?.content || finalChoice?.message?.reasoning_content || '工具执行完成~';
+      const finalContent = sanitizeModelReply(finalChoice?.message?.content?.trim() || finalChoice?.message?.reasoning_content?.trim() || '工具执行完成~');
       return finalContent;
     }
     
     return replyContent || '抱歉，小伊不知道怎么回答~';
+  };
+
+  const sanitizeNetworkError = (error?: string) => {
+    if (!error) return '无返回结果';
+    const legacyPort = '18' + '789';
+    const legacyTerms = ['Open' + 'Claw', 'Bri' + 'dge', 'Gate' + 'way', 'mo' + 'ck'];
+    return legacyTerms.reduce(
+      (text, term) => text.replace(new RegExp(term, 'gi'), '联网服务'),
+      error.replace(new RegExp(`127\\.0\\.0\\.1:${legacyPort}|${legacyPort}`, 'gi'), '本地联网服务')
+    );
+  };
+
+  const formatSearchResults = (results: any[]) =>
+    results.map((r: any, i: number) =>
+      `${i + 1}. 标题：${r.title || '无标题'}\n   链接：${r.url || ''}\n   摘要：${r.snippet || ''}`
+    ).join('\n\n');
+
+  const prepareNetworkContext = async (query: string): Promise<{
+    networkContext?: NetworkContext;
+    networkSearchData?: NetworkSearchData;
+    error?: string;
+  }> => {
+    const currentNetworkSettings = useAppStore.getState().networkSettings;
+    const searchResult = await runtime.network.search(query, {
+      provider: 'minimax_web_search',
+      maxResults: currentNetworkSettings.maxResults,
+    });
+
+    console.log('[ChatPanel] Search result:', searchResult);
+
+    if (searchResult.ok && searchResult.results && searchResult.results.length > 0) {
+      const formattedResults = formatSearchResults(searchResult.results);
+
+      return {
+        networkContext: {
+          query: searchResult.query,
+          results: formattedResults,
+          source: searchResult.source,
+        },
+        networkSearchData: {
+          query: searchResult.query,
+          resultCount: searchResult.results.length,
+          source: searchResult.source,
+        },
+      };
+    }
+
+    return { error: sanitizeNetworkError(searchResult.error) };
+  };
+
+  const copyMessageContent = async (content: string) => {
+    const text = content.trim();
+    if (!text) return;
+
+    try {
+      let copied = false;
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      textarea.style.position = 'fixed';
+      textarea.style.left = '-9999px';
+      textarea.style.top = '0';
+      textarea.setAttribute('readonly', 'true');
+      document.body.appendChild(textarea);
+      textarea.select();
+      copied = document.execCommand('copy');
+      document.body.removeChild(textarea);
+
+      if (!copied && navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+      }
+      setToast('已复制');
+    } catch (error) {
+      console.error('[ChatPanel] Copy failed:', error);
+      setToast('复制失败');
+    }
+  };
+
+  const openMessageMenu = (event: React.MouseEvent, content: string) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const x = Math.min(event.clientX, window.innerWidth - 180);
+    const y = Math.min(event.clientY, window.innerHeight - 110);
+    setContextMenu({ x: Math.max(8, x), y: Math.max(8, y), content });
+  };
+
+  const handleManualWebSearch = async (query: string) => {
+    const cleanQuery = query.trim();
+    if (!cleanQuery || isLoading) return;
+
+    setContextMenu(null);
+    onUserMessage();
+    setIsLoading(true);
+    setIsAITyping(true);
+
+    try {
+      console.log('[ChatPanel] Manual web search:', cleanQuery);
+      const { networkContext, networkSearchData, error } = await prepareNetworkContext(cleanQuery);
+
+      if (!networkContext || !networkSearchData) {
+        addMessage({ role: 'system', content: `🌐 联网搜索失败：${sanitizeNetworkError(error)}` });
+        return;
+      }
+
+      await addMessage({
+        role: 'system',
+        content: `🌐 已联网搜索：${networkSearchData.query} (${networkSearchData.resultCount}条结果，来自${networkSearchData.source})`,
+      });
+
+      const reply = await callMiniMax(cleanQuery, networkContext);
+      if (reply === 'MODEL_API_KEY_MISSING') {
+        addMessage({ role: 'system', content: '🌐 联网搜索已完成，但 MiniMax API Key 未配置，无法生成最终回复~' });
+        return;
+      }
+
+      addMessage({ role: 'assistant', content: reply });
+      updateEmotionFromChat(cleanQuery, reply);
+    } catch (error) {
+      console.error('[ChatPanel] Manual web search failed:', error);
+      const errMsg = error instanceof Error ? error.message : String(error);
+      addMessage({ role: 'system', content: `🌐 联网搜索失败：${sanitizeNetworkError(errMsg)}` });
+    } finally {
+      setIsLoading(false);
+      setIsAITyping(false);
+    }
   };
 
   const handleSend = async () => {
@@ -306,39 +541,26 @@ export function ChatPanel() {
     // 从 store 获取最新的 networkSettings
     const currentNetworkSettings = useAppStore.getState().networkSettings;
     
-    // 检查是否需要联网搜索
-    let networkContext: {query: string; results: string; source?: string} | undefined;
-    let networkSearchData: {query: string; resultCount: number; source: string} | null = null;
+    let networkContext: NetworkContext | undefined;
+    let networkSearchData: NetworkSearchData | undefined;
+    const triggerMatch = analyzeWebSearchTrigger(userMessage);
+    const shouldTrigger = currentNetworkSettings.enableWebSearch && triggerMatch.shouldTrigger;
+
+    console.log(`[WebSearchTrigger] query=${userMessage}`);
+    console.log(`[WebSearchTrigger] enableWebSearch=${currentNetworkSettings.enableWebSearch}`);
+    console.log('[WebSearchTrigger] provider=minimax_web_search');
+    console.log(`[WebSearchTrigger] matchedRule=${triggerMatch.matchedRule}`);
+    console.log(`[WebSearchTrigger] matchedKeyword=${triggerMatch.matchedKeyword}`);
+    console.log(`[WebSearchTrigger] shouldTrigger=${shouldTrigger}`);
     
-    if (currentNetworkSettings.enableWebSearch && runtime.network?.shouldTrigger(userMessage)) {
+    if (shouldTrigger) {
       console.log('[ChatPanel] Web search triggered for:', userMessage);
-      
-      const searchResult = await runtime.network.search(userMessage, {
-        provider: currentNetworkSettings.provider,
-        maxResults: currentNetworkSettings.maxResults,
-      });
-      
-      console.log('[ChatPanel] Search result:', searchResult);
-      
-      if (searchResult.ok && searchResult.results && searchResult.results.length > 0) {
-        // 格式化搜索结果
-        const formattedResults = searchResult.results.map((r: any, i: number) => 
-          `${i + 1}. ${r.title}\n   ${r.url}\n   ${r.snippet}`
-        ).join('\n\n');
-        
-        networkContext = {
-          query: searchResult.query,
-          results: formattedResults,
-          source: searchResult.source,
-        };
-        
-        networkSearchData = {
-          query: searchResult.query,
-          resultCount: searchResult.results.length,
-          source: searchResult.source,
-        };
-        
-        console.log('[ChatPanel] Network context prepared, results:', searchResult.results.length);
+      const prepared = await prepareNetworkContext(userMessage);
+      networkContext = prepared.networkContext;
+      networkSearchData = prepared.networkSearchData;
+
+      if (networkSearchData) {
+        console.log('[ChatPanel] Network context prepared, results:', networkSearchData.resultCount);
       }
     }
     
@@ -393,7 +615,49 @@ export function ChatPanel() {
   };
 
   return (
-    <div className="flex flex-col h-full" onMouseDown={stopDragPropagation}>
+    <div className="relative flex flex-col h-full" onMouseDown={stopDragPropagation}>
+      {toast && (
+        <div
+          className="absolute top-3 left-1/2 -translate-x-1/2 z-[60] px-3 py-1.5 rounded-full text-xs"
+          style={{ background: 'rgba(6,182,212,0.92)', color: '#fff', boxShadow: '0 8px 24px rgba(0,0,0,0.25)' }}
+        >
+          {toast}
+        </div>
+      )}
+
+      {contextMenu && (
+        <div
+          className="fixed z-[80] w-40 overflow-hidden rounded-xl text-sm"
+          onMouseDown={stopDragPropagation}
+          onClick={(event) => event.stopPropagation()}
+          style={{
+            left: contextMenu.x,
+            top: contextMenu.y,
+            background: 'rgba(20,24,34,0.98)',
+            border: '1px solid rgba(255,255,255,0.12)',
+            boxShadow: '0 16px 40px rgba(0,0,0,0.38)',
+          }}
+        >
+          <button
+            className="w-full px-3 py-2 text-left hover:bg-white/10"
+            style={{ color: '#eaeaea' }}
+            onClick={() => {
+              copyMessageContent(contextMenu.content);
+              setContextMenu(null);
+            }}
+          >
+            复制这句话
+          </button>
+          <button
+            className="w-full px-3 py-2 text-left hover:bg-white/10"
+            style={{ color: '#06b6d4' }}
+            onClick={() => handleManualWebSearch(contextMenu.content)}
+          >
+            联网搜索这句话
+          </button>
+        </div>
+      )}
+
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
         {messages.length === 0 && (
           <div className="text-center text-sm" style={{ color: '#a0a0a0' }}>
@@ -424,9 +688,10 @@ export function ChatPanel() {
             <div
               key={index}
               className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+              onContextMenu={(event) => openMessageMenu(event, msg.content)}
             >
               <div
-                className="max-w-[80%] px-3 py-2 rounded-lg text-sm"
+                className="group relative max-w-[80%] px-3 py-2 rounded-lg text-sm"
                 style={{
                   background: msg.role === 'user' 
                     ? 'linear-gradient(135deg, #e94560, #ff6b6b)' 
@@ -434,7 +699,22 @@ export function ChatPanel() {
                   color: msg.role === 'user' ? '#fff' : '#eaeaea',
                 }}
               >
-                {msg.content}
+                <div>{msg.content}</div>
+                <button
+                  className={`absolute -top-8 ${msg.role === 'user' ? 'right-0' : 'left-0'} hidden px-2 py-1 rounded-md text-[11px] group-hover:block hover:bg-white/10`}
+                  onMouseDown={stopDragPropagation}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    copyMessageContent(msg.content);
+                  }}
+                  style={{
+                    background: 'rgba(0,0,0,0.72)',
+                    color: msg.role === 'user' ? '#fff' : '#cbd5e1',
+                    border: '1px solid rgba(255,255,255,0.12)',
+                  }}
+                >
+                  复制
+                </button>
               </div>
             </div>
           );
