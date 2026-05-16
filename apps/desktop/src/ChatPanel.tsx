@@ -502,7 +502,7 @@ ${networkContext.results}
       const { networkContext, networkSearchData, error } = await prepareNetworkContext(cleanQuery);
 
       if (!networkContext || !networkSearchData) {
-        addMessage({ role: 'system', content: `🌐 联网搜索失败：${sanitizeNetworkError(error)}` });
+        await addMessage({ role: 'system', content: `🌐 联网搜索失败：${sanitizeNetworkError(error)}` });
         return;
       }
 
@@ -513,16 +513,16 @@ ${networkContext.results}
 
       const reply = await callMiniMax(cleanQuery, networkContext);
       if (reply === 'MODEL_API_KEY_MISSING') {
-        addMessage({ role: 'system', content: '🌐 联网搜索已完成，但 MiniMax API Key 未配置，无法生成最终回复~' });
+        await addMessage({ role: 'system', content: '🌐 联网搜索已完成，但 MiniMax API Key 未配置，无法生成最终回复~' });
         return;
       }
 
-      addMessage({ role: 'assistant', content: reply });
+      await addMessage({ role: 'assistant', content: reply });
       updateEmotionFromChat(cleanQuery, reply);
     } catch (error) {
       console.error('[ChatPanel] Manual web search failed:', error);
       const errMsg = error instanceof Error ? error.message : String(error);
-      addMessage({ role: 'system', content: `🌐 联网搜索失败：${sanitizeNetworkError(errMsg)}` });
+      await addMessage({ role: 'system', content: `🌐 联网搜索失败：${sanitizeNetworkError(errMsg)}` });
     } finally {
       setIsLoading(false);
       setIsAITyping(false);
@@ -586,10 +586,10 @@ ${networkContext.results}
         const networkStatusMsg = networkContext
           ? `🌐 联网搜索已完成，但模型 API Key 未配置，无法生成最终回复~\n\n请到设置中填写 MiniMax API Key。`
           : `⚠️ MiniMax API Key 未配置，无法回复~\n\n请到设置中填写 MiniMax API Key。`;
-        addMessage({ role: 'system', content: networkStatusMsg });
-        addMessage({ role: 'assistant', content: 'MODEL_API_KEY_MISSING' });
+        await addMessage({ role: 'system', content: networkStatusMsg });
+        await addMessage({ role: 'assistant', content: 'MODEL_API_KEY_MISSING' });
       } else {
-        addMessage({ role: 'assistant', content: reply });
+        await addMessage({ role: 'assistant', content: reply });
         // 更新情绪和记忆
         updateEmotionFromChat(userMessage, reply);
       }
@@ -597,9 +597,9 @@ ${networkContext.results}
       console.error('AI调用失败:', error);
       const errMsg = error instanceof Error ? error.message : String(error);
       if (errMsg.includes('fetch') || errMsg.includes('network')) {
-        addMessage({ role: 'assistant', content: '网络连接失败，请检查网络后重试~' });
+        await addMessage({ role: 'assistant', content: '网络连接失败，请检查网络后重试~' });
       } else {
-        addMessage({ role: 'assistant', content: '抱歉，小伊暂时离线了~' });
+        await addMessage({ role: 'assistant', content: '抱歉，小伊暂时离线了~' });
       }
     } finally {
       setIsLoading(false);

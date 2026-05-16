@@ -31,17 +31,22 @@ export async function initDatabase(): Promise<void> {
 
 // 保存消息
 export async function saveMessage(role: 'user' | 'assistant' | 'system', content: string): Promise<void> {
+  console.log(`CHAT_SAVE_ATTEMPT=true CHAT_SAVE_ROLE=${role} CHAT_SAVE_CONTENT_LENGTH=${content.length}`);
   const result = await runtime.messages.save(role, content);
   if (result.ok) {
+    console.log(`CHAT_SAVE_OK=true CHAT_SAVE_ROLE=${role}`);
     console.log('[DB] Message saved via runtime');
   } else {
+    console.warn(`CHAT_SAVE_OK=false CHAT_SAVE_ROLE=${role}`);
     console.warn('[DB] saveMessage warning:', result.error);
   }
 }
 
 // 加载消息
 export async function loadMessages(limit = 50): Promise<Message[]> {
+  console.log('CHAT_LOAD_ATTEMPT=true');
   const messages = await runtime.messages.load(limit);
+  console.log(`CHAT_LOAD_COUNT=${messages.length}`);
   return messages.map((m, i) => ({
     id: i,
     role: m.role,

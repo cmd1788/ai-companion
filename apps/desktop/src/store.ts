@@ -205,13 +205,14 @@ interface AppState {
   initDB: () => Promise<void>;
   setEmotion: (emotion: EmotionState) => void;
   setCharacterState: (state: string) => void;
-  addMessage: (message: {role: string; content: string}) => void;
+  addMessage: (message: {role: string; content: string}) => Promise<void>;
   clearMessages: () => void;
   setSettingsOpen: (open: boolean) => void;
   setChatOpen: (open: boolean) => void;
   setAIConfig: (config: AIConfig) => void;
   setPhotoPath: (path: string) => void;
   updateEmotionFromChat: (userMessage: string, assistantReply: string) => void;
+  setMemories: (memories: Memory[]) => void;
 }
 
 const DEFAULT_EMOTION: EmotionState = {
@@ -310,11 +311,25 @@ function getExpressionFromEmotion(emotion: EmotionState): string {
 
 // 从用户消息中提取记忆（不包含AI回复）
 function extractMemory(userMessage: string): string | null {
+  // 明确要求记住的触发词（高优先级）
+  const strongTriggers = [
+    '请记住', '记住我的', '我的偏好', '我希望你', '我希望',
+    '回答问题时', '以后都要', '以后请', '请一定', '一定要',
+    '记住：', '记住，', '偏好是', '喜欢中文', '中文回答',
+  ];
+
+  for (const trigger of strongTriggers) {
+    if (userMessage.includes(trigger)) {
+      // 取整句或整段
+      return userMessage.trim();
+    }
+  }
+
+  // 普通触发词（需要长度限制避免污染）
   const memoryTriggers = [
-    '我叫', '名字是', '是程序员', '喜欢', '讨厌',
-    '工作', '学校', '大学', '专业', '生日', '年龄',
-    '住', '城市', '省份', '国家', '养', '有', '没有',
-    '叫', '是', '职业', '城市', '运动', '猫', '狗',
+    '我叫', '名字是', '是程序员', '工作', '学校', '大学', '专业',
+    '生日', '年龄', '城市', '省份', '国家', '养', '职业',
+    '喜欢', '讨厌', '运动', '猫', '狗',
   ];
 
   for (const trigger of memoryTriggers) {
@@ -428,6 +443,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         loadMemories()
       ]);
       console.log('[Store] Loaded:', savedMessages.length, 'messages,', savedMemories.length, 'memories');
+      console.log(`CHAT_LOAD_COUNT=${savedMessages.length}`);
+      console.log(`CHAT_STORE_SET_COUNT=${savedMessages.length}`);
       set({
         dbReady: true,
         emotion: savedEmotion || DEFAULT_EMOTION,
@@ -454,11 +471,16 @@ export const useAppStore = create<AppState>((set, get) => ({
     
     if (state.dbReady) {
       try {
+        console.log(`CHAT_SAVE_ATTEMPT=true CHAT_SAVE_ROLE=${message.role} CHAT_SAVE_CONTENT_LENGTH=${message.content.length}`);
         await saveMessage(message.role as 'user' | 'assistant' | 'system', message.content);
+        console.log(`CHAT_SAVE_OK=true CHAT_SAVE_ROLE=${message.role}`);
         console.log('[Store] Message saved to DB');
       } catch (e) {
+        console.error(`CHAT_SAVE_OK=false CHAT_SAVE_ROLE=${message.role}`);
         console.error('[Store] Failed to save message:', e);
       }
+    } else {
+      console.warn(`CHAT_SAVE_SKIPPED_DB_NOT_READY=true CHAT_SAVE_ROLE=${message.role}`);
     }
   },
 
@@ -519,4 +541,6 @@ export const useAppStore = create<AppState>((set, get) => ({
       console.log('[Store] New memory:', memory);
     }
   },
+
+  setMemories: (memories) => set({ memories }),
 }));

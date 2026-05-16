@@ -96,6 +96,11 @@ fn ping(state: State<DbState>) -> String {
 #[tauri::command]
 fn save_message(state: State<DbState>, role: String, content: String) -> Result<i64, String> {
     let conn = state.conn.lock().map_err(|e| e.to_string())?;
+    log::info!(
+        "CHAT_SAVE_ATTEMPT=true CHAT_SAVE_ROLE={} CHAT_SAVE_CONTENT_LENGTH={}",
+        role,
+        content.chars().count()
+    );
     let timestamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_err(|e| e.to_string())?
@@ -108,16 +113,21 @@ fn save_message(state: State<DbState>, role: String, content: String) -> Result<
     .map_err(|e| e.to_string())?;
 
     let last_id = conn.last_insert_rowid();
-    log::info!("[RustDB] Message saved id={}", last_id);
+    log::info!("CHAT_SAVE_OK=true CHAT_SAVE_ID={}", last_id);
     Ok(last_id)
 }
 
 #[tauri::command]
 fn load_messages(state: State<DbState>, limit: i64) -> Result<Vec<Message>, String> {
     let conn = state.conn.lock().map_err(|e| e.to_string())?;
+    log::info!("CHAT_LOAD_ATTEMPT=true CHAT_LOAD_LIMIT={}", limit);
     let mut stmt = conn
         .prepare(
-            "SELECT id, role, content, timestamp FROM messages ORDER BY timestamp ASC LIMIT ?1",
+            "SELECT id, role, content, timestamp FROM (
+                SELECT id, role, content, timestamp FROM messages
+                ORDER BY timestamp DESC, id DESC
+                LIMIT ?1
+            ) ORDER BY timestamp ASC, id ASC",
         )
         .map_err(|e| e.to_string())?;
 
@@ -134,7 +144,7 @@ fn load_messages(state: State<DbState>, limit: i64) -> Result<Vec<Message>, Stri
         .filter_map(|r| r.ok())
         .collect();
 
-    log::info!("[RustDB] Loaded {} messages", messages.len());
+    log::info!("CHAT_LOAD_COUNT={}", messages.len());
     Ok(messages)
 }
 
@@ -751,6 +761,7 @@ pub fn run() {
         .setup(|app| {
             let db_path = get_db_path(app.handle());
             log::info!("[RustDB] Database path: {:?}", db_path);
+            log::info!("CHAT_DB_PATH={}", db_path.display());
 
             let conn = Connection::open(&db_path).expect("Failed to open database");
             init_db(&conn).expect("Failed to init database schema");

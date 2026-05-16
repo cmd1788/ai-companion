@@ -32,6 +32,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
     character, setCharacter,
     photoPath, setPhotoPath,
     networkSettings, setNetworkSettings,
+    memories,
   } = useAppStore();
 
   // 性格选项
@@ -438,20 +439,26 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
                   <span className="text-lg">📊</span>
                   <h3 className="text-base font-semibold" style={{ color: '#a855f7' }}>记忆统计</h3>
                 </div>
-                <div className="grid grid-cols-3 gap-4">
-                  <div className="p-4 rounded-xl text-center" style={{ background: 'rgba(0,0,0,0.3)' }}>
-                    <div className="text-2xl font-bold" style={{ color: '#a855f7' }}>--</div>
-                    <div className="text-xs" style={{ color: '#666' }}>总记忆数</div>
+                  <div className="grid grid-cols-3 gap-4">
+                    <div className="p-4 rounded-xl text-center" style={{ background: 'rgba(0,0,0,0.3)' }}>
+                      <div className="text-2xl font-bold" style={{ color: '#a855f7' }}>{memories.length}</div>
+                      <div className="text-xs" style={{ color: '#666' }}>总记忆数</div>
+                    </div>
+                    <div className="p-4 rounded-xl text-center" style={{ background: 'rgba(0,0,0,0.3)' }}>
+                      <div className="text-2xl font-bold" style={{ color: '#a855f7' }}>{memories.filter(m => {
+                        const today = new Date();
+                        const memDate = new Date(m.timestamp);
+                        return memDate.getDate() === today.getDate() &&
+                               memDate.getMonth() === today.getMonth() &&
+                               memDate.getFullYear() === today.getFullYear();
+                      }).length}</div>
+                      <div className="text-xs" style={{ color: '#666' }}>今日新增</div>
+                    </div>
+                    <div className="p-4 rounded-xl text-center" style={{ background: 'rgba(0,0,0,0.3)' }}>
+                      <div className="text-2xl font-bold" style={{ color: '#a855f7' }}>{memories.length}</div>
+                      <div className="text-xs" style={{ color: '#666' }}>本周访问</div>
+                    </div>
                   </div>
-                  <div className="p-4 rounded-xl text-center" style={{ background: 'rgba(0,0,0,0.3)' }}>
-                    <div className="text-2xl font-bold" style={{ color: '#a855f7' }}>--</div>
-                    <div className="text-xs" style={{ color: '#666' }}>今日新增</div>
-                  </div>
-                  <div className="p-4 rounded-xl text-center" style={{ background: 'rgba(0,0,0,0.3)' }}>
-                    <div className="text-2xl font-bold" style={{ color: '#a855f7' }}>--</div>
-                    <div className="text-xs" style={{ color: '#666' }}>本周访问</div>
-                  </div>
-                </div>
               </div>
             </div>
           )}
