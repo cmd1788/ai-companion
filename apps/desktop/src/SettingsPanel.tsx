@@ -1399,6 +1399,7 @@ function SchedulerTaskManager() {
   const [formTimeOfDay, setFormTimeOfDay] = useState('09:00');
   const [formInterval, setFormInterval] = useState(60);
   const [formRunAt, setFormRunAt] = useState('');
+  const [formWebSearch, setFormWebSearch] = useState(false);
 
   const loadTasks = () => setTasks(loadScheduledTasks());
 
@@ -1414,6 +1415,7 @@ function SchedulerTaskManager() {
     setFormTimeOfDay('09:00');
     setFormInterval(60);
     setFormRunAt('');
+    setFormWebSearch(false);
     setShowForm(true);
   };
 
@@ -1424,7 +1426,8 @@ function SchedulerTaskManager() {
     setFormType(task.type);
     setFormTimeOfDay(task.timeOfDay || '09:00');
     setFormInterval(task.intervalMinutes || 60);
-    setFormRunAt(task.runAt ? task.runAt.slice(0, 16) : ''); // YYYY-MM-DDTHH:mm
+    setFormRunAt(task.runAt ? task.runAt.slice(0, 16) : '');
+    setFormWebSearch(task.enableWebSearch ?? false);
     setShowForm(true);
   };
 
@@ -1461,6 +1464,7 @@ function SchedulerTaskManager() {
         timeOfDay: formType === 'daily' ? formTimeOfDay : undefined,
         intervalMinutes: formType === 'interval' ? formInterval : undefined,
         runAt: formType === 'once' ? new Date(formRunAt).toISOString() : undefined,
+        enableWebSearch: formWebSearch,
       });
     } else {
       // 新建模式
@@ -1471,6 +1475,7 @@ function SchedulerTaskManager() {
         timeOfDay: formType === 'daily' ? formTimeOfDay : undefined,
         intervalMinutes: formType === 'interval' ? formInterval : undefined,
         runAt: formType === 'once' ? new Date(formRunAt).toISOString() : undefined,
+        enableWebSearch: formWebSearch,
       });
     }
 
@@ -1566,7 +1571,7 @@ function SchedulerTaskManager() {
               />
             </div>
 
-            {/* 任务类型 */}
+            {/* 执行方式 */}
             <div>
               <label className="block text-xs mb-2" style={{ color: '#888' }}>执行方式</label>
               <div className="flex gap-2">
@@ -1591,6 +1596,20 @@ function SchedulerTaskManager() {
                   </button>
                 ))}
               </div>
+            </div>
+
+            {/* 联网搜索开关 */}
+            <div className="flex items-center justify-between p-4 rounded-xl" style={{ background: 'rgba(6,182,212,0.08)', border: '1px solid rgba(6,182,212,0.2)' }}>
+              <div>
+                <div className="text-sm font-medium" style={{ color: '#fff' }}>🌐 联网搜索</div>
+                <div className="text-xs mt-1" style={{ color: '#888' }}>开启后，任务内容将作为搜索关键词执行 MiniMax 联网搜索</div>
+              </div>
+              <button
+                onClick={() => setFormWebSearch(!formWebSearch)}
+                className={`w-12 h-6 rounded-full transition-colors ${formWebSearch ? 'bg-cyan-500' : 'bg-gray-600'}`}
+              >
+                <div className={`w-5 h-5 rounded-full bg-white shadow transition-transform ${formWebSearch ? 'translate-x-6' : 'translate-x-0.5'}`} />
+              </button>
             </div>
 
             {/* 类型相关字段 */}
@@ -1729,6 +1748,9 @@ function SchedulerTaskManager() {
                       <span>⏮️ 上次：{new Date(task.lastRunAt).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
                     )}
                     <span>🔄 共执行 {task.runCount} 次</span>
+                    {task.enableWebSearch && (
+                      <span style={{ color: '#06b6d4' }}>🌐 联网</span>
+                    )}
                   </div>
                 </div>
 

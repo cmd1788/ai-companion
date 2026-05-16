@@ -44,6 +44,7 @@ export function createScheduledTask(params: {
   timeOfDay?: string;
   intervalMinutes?: number;
   runAt?: string;
+  enableWebSearch?: boolean;
 }): ScheduledTask {
   const now = new Date();
   let nextRunAt: string;
@@ -85,6 +86,7 @@ export function createScheduledTask(params: {
     runCount: 0,
     createdAt: nowISO,
     updatedAt: nowISO,
+    enableWebSearch: params.enableWebSearch ?? false,
   };
 
   console.log(`[Scheduler] scheduled_task_created id=${task.id} type=${task.type} next_run_at=${task.nextRunAt}`);
@@ -175,6 +177,16 @@ function formatDisplayTime(isoString: string): string {
   }
 }
 
+/** 格式化搜索结果为文本摘要 */
+function formatSearchResults(results: any[]): string {
+  if (!results || results.length === 0) return '无结果';
+  return results.slice(0, 3).map((r, i) => {
+    const title = r.title || '无标题';
+    const snippet = r.snippet ? r.snippet.substring(0, 150) : '';
+    return `${i + 1}. ${title}\n   ${snippet}`;
+  }).join('\n\n');
+}
+
 /** 生成定时任务触发的中文消息 */
 function buildScheduledTaskMessage(task: ScheduledTask): string {
   const timeInfo = task.type === 'interval'
@@ -217,14 +229,73 @@ async function checkAndTriggerTasks(): Promise<void> {
       if (now.getTime() - lastRun.getTime() < 60000) continue;
     }
 
-    console.log(`[Scheduler] scheduled_task_triggered task_id=${task.id} type=${task.type} title=${task.title}`);
+    console.log(`[Scheduler] scheduled_task_triggered task_id=${task.id} type=${task.type} title=${task.title} webSearch=${task.enableWebSearch}`);
 
-    // 构建中文消息内容（不调用模型，直接用中文模板）
-    const messageContent = buildScheduledTaskMessage(task);
+    let messageContent = '';
+    let webSearchMeta = null;
+
+    // 如果启用了联网搜索，先执行联网
+    if (task.enableWebSearch) {
+      try {
+        const { runtime } = await import('./runtime/runtimeAdapter');
+        const searchResult = await runtime.network.search(task.content, {
+          provider: 'minimax_web_search',
+          maxResults: 5,
+        });
+
+        if (searchResult.ok && searchResult.results && searchResult.results.length > 0) {
+          const results = searchResult.results;
+          const formatted = formatSearchResults(results);
+
+          // 构建联网搜索结构化消息
+          const sources = results.map((r: any, i: number) => `${i + 1}. ${r.title} - ${r.url}`).join('\n');
+          messageContent = `⏰ 定时任务：${task.title}
+
+【联网搜索结果】
+🌐 已搜索：${task.content}
+找到 ${results.length} 条相关结果：
+
+【关键信息】
+${formatted.slice(0, 800)}
+
+【来源】
+${sources}`;
+
+          webSearchMeta = {
+            provider: 'minimax_web_search',
+            isMock: false,
+            query: task.content,
+            resultCount: results.length,
+            source: searchResult.source || 'MiniMax',
+            results: results,
+          };
+
+          console.log(`[Scheduler] scheduled_task_websearch_done task_id=${task.id} results=${results.length}`);
+        } else {
+          messageContent = `⏰ 定时任务：${task.title}
+
+【联网搜索结果】
+⚠️ 搜索未返回结果，任务内容：${task.content}`;
+        }
+      } catch (error) {
+        console.error('[Scheduler] scheduled_task_websearch_failed:', error);
+        messageContent = `⏰ 定时任务：${task.title}
+
+【联网搜索失败】
+⚠️ 联网搜索出错：${error instanceof Error ? error.message : String(error)}
+任务内容：${task.content}`;
+      }
+    } else {
+      // 普通任务（不联网）
+      messageContent = buildScheduledTaskMessage(task);
+    }
 
     // 在聊天框插入消息
     try {
       const { addMessage } = useAppStore.getState();
+      if (webSearchMeta) {
+        await addMessage({ role: 'system', content: `🌐 已联网搜索：${task.content} (${webSearchMeta.resultCount}条结果)` });
+      }
       await addMessage({ role: 'assistant', content: messageContent });
       console.log(`[Scheduler] scheduled_task_message_inserted task_id=${task.id}`);
     } catch (e) {

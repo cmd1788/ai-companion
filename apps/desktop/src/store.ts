@@ -211,6 +211,7 @@ export interface ScheduledTask {
   runCount: number;           // 累计执行次数
   createdAt: string;          // ISO 时间字符串
   updatedAt: string;          // ISO 时间字符串
+  enableWebSearch?: boolean;  // 定时任务是否启用联网搜索
 }
 
 interface AppState {

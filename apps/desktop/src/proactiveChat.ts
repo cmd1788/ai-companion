@@ -221,7 +221,30 @@ async function callMiniMaxAPI(prompt) {
     }
 
     const data = await response.json();
-    const reply = data.choices?.[0]?.message?.content || data.choices?.[0]?.message?.reasoning_content || '';
+    let reply = data.choices?.[0]?.message?.content || '';
+    const reasoningContent = data.choices?.[0]?.message?.reasoning_content || '';
+    // 如果 content 为空但有 reasoning_content，检测是否为英文推理
+    if (!reply.trim() && reasoningContent.trim()) {
+      const rTrimmed = reasoningContent.trim();
+      if (rTrimmed.length > 200 || /The user|I need to|We need to|As an AI|I'm an AI/i.test(rTrimmed)) {
+        reply = '小伊刚刚在想点有趣的事情~';
+      } else {
+        reply = rTrimmed;
+      }
+    }
+    // 对回复做中文清洗
+    const CHINESE_POLLUTION_PATTERNS = [
+      /^(The user|I need to|We need to|As an AI|I'm an AI)/i,
+      /Here is (the|my)/i,
+      /Sure,? (here|let me|I can)/i,
+      /Let me (search|find|check|look)/i,
+      /\*\*/g,
+    ];
+    for (const pattern of CHINESE_POLLUTION_PATTERNS) {
+      reply = reply.replace(pattern, '');
+    }
+    reply = reply.trim();
+    if (!reply) return '小伊刚刚在想点有趣的事情~';
     
     console.log('[MODEL_DEBUG][Proactive] content.length=', reply.length);
     console.log('[MODEL_DEBUG][Proactive] base_resp.status_code=', data.base_resp?.status_code);

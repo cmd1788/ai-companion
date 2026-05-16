@@ -372,7 +372,12 @@ ${networkContext.results}
     
     let replyContent = content.trim();
     if (!replyContent && reasoningContent.trim()) {
-      replyContent = reasoningContent.trim();
+      const rTrimmed = reasoningContent.trim();
+      if (rTrimmed.length > 200 || /The user|I need to|We need to|As an AI|I'm an AI/i.test(rTrimmed)) {
+        replyContent = "小伊刚刚思考了一下，但没有组织好完整回复。你可以再问我一次，我会重新回答~";
+      } else {
+        replyContent = rTrimmed;
+      }
     }
     replyContent = sanitizeModelReply(replyContent);
     
@@ -649,9 +654,6 @@ ${networkContext.results}
 
     const userMessage = input.trim();
     console.log('[ChatPanel] Sending:', userMessage);
-    setInput('');
-    // 记录用户发消息时间，用于主动聊天冷却
-    onUserMessage();
     
     // 从 store 获取最新的 networkSettings
     const currentNetworkSettings = useAppStore.getState().networkSettings;
@@ -670,16 +672,22 @@ ${networkContext.results}
     
     if (shouldTrigger) {
       console.log('[ChatPanel] Web search triggered for:', userMessage);
-      const prepared = await prepareNetworkContext(userMessage);
-      networkContext = prepared.networkContext;
-      networkSearchData = prepared.networkSearchData;
-
-      if (networkSearchData) {
-        console.log('[ChatPanel] Network context prepared, results:', networkSearchData.resultCount);
+      try {
+        const prepared = await prepareNetworkContext(userMessage);
+        networkContext = prepared.networkContext;
+        networkSearchData = prepared.networkSearchData;
+        if (networkSearchData) {
+          console.log('[ChatPanel] Network context prepared, results:', networkSearchData.resultCount);
+        }
+      } catch (error) {
+        console.error('[ChatPanel] prepareNetworkContext failed:', error);
+        // 网络搜索失败不影响用户消息落库，继续走普通回复
+        const errMsg = error instanceof Error ? error.message : String(error);
+        await addMessage({ role: 'system', content: `🌐 联网搜索失败：${sanitizeNetworkError(errMsg)}` });
       }
     }
     
-    // 先添加用户消息
+    // 先添加用户消息（确保不丢失）
     await addMessage({ role: 'user', content: userMessage });
     
     // 如果有联网搜索标识，立即显示
@@ -698,6 +706,8 @@ ${networkContext.results}
       });
     }
     
+    setInput('');
+    onUserMessage();
     setIsLoading(true);
     setIsAITyping(true);
 
