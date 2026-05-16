@@ -177,6 +177,42 @@ interface NetworkSettings {
   settingsVersion?: number;      // 设置版本，用于迁移
 }
 
+// 联网搜索元数据（用于结构化展示）
+export interface WebSearchMeta {
+  provider: string;        // 'minimax_web_search'
+  isMock: boolean;         // false
+  query: string;          // 搜索关键词
+  resultCount: number;     // 结果数量
+  source: string;         // 来源名称
+  results: Array<{
+    title: string;
+    url: string;
+    snippet?: string;
+    date?: string;
+  }>;
+}
+
+// 定时任务类型
+export type ScheduledTaskType = 'once' | 'daily' | 'interval';
+
+// 定时任务接口
+export interface ScheduledTask {
+  id: string;
+  title: string;
+  content: string;            // 任务内容（用户输入）
+  type: ScheduledTaskType;
+  enabled: boolean;
+  timeOfDay?: string;         // HH:mm 格式，用于 daily
+  intervalMinutes?: number;    // 分钟数，用于 interval
+  runAt?: string;             // ISO 时间字符串，用于 once
+  nextRunAt: string;          // ISO 时间字符串
+  lastRunAt?: string;         // ISO 时间字符串
+  completedAt?: string;        // ISO 时间字符串，once 执行完成后标记
+  runCount: number;           // 累计执行次数
+  createdAt: string;          // ISO 时间字符串
+  updatedAt: string;          // ISO 时间字符串
+}
+
 interface AppState {
   dbReady: boolean;
   character: CharacterProfile;
@@ -205,7 +241,7 @@ interface AppState {
   initDB: () => Promise<void>;
   setEmotion: (emotion: EmotionState) => void;
   setCharacterState: (state: string) => void;
-  addMessage: (message: {role: string; content: string}) => Promise<void>;
+  addMessage: (message: {role: string; content: string; webSearchMeta?: WebSearchMeta}) => Promise<void>;
   clearMessages: () => void;
   setSettingsOpen: (open: boolean) => void;
   setChatOpen: (open: boolean) => void;
@@ -213,6 +249,8 @@ interface AppState {
   setPhotoPath: (path: string) => void;
   updateEmotionFromChat: (userMessage: string, assistantReply: string) => void;
   setMemories: (memories: Memory[]) => void;
+  scheduledTasks: ScheduledTask[];
+  setScheduledTasks: (tasks: ScheduledTask[]) => void;
 }
 
 const DEFAULT_EMOTION: EmotionState = {
@@ -543,4 +581,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   setMemories: (memories) => set({ memories }),
+
+  scheduledTasks: [],
+
+  setScheduledTasks: (tasks) => set({ scheduledTasks: tasks }),
 }));

@@ -6,6 +6,7 @@ import { SettingsPanel } from './SettingsPanel';
 import { ScreenWatcher } from './ScreenWatcher';
 import { useAppStore } from './store';
 import { startProactiveChat, stopProactiveChat, restartProactiveChat } from './proactiveChat';
+import { startScheduler } from './scheduledTask';
 import { runtime } from './runtime/runtimeAdapter';
 
 export default function App() {
@@ -47,6 +48,8 @@ export default function App() {
       
       // 启动主动聊天
       startProactiveChat();
+      // 启动定时任务调度器
+      startScheduler();
     };
     
     init();

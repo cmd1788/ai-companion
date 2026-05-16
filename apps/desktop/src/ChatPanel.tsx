@@ -4,6 +4,7 @@ import { analyzeScreen, generateImage, textToSpeech } from './mcpService';
 import { onUserMessage } from './proactiveChat';
 import { runtime } from './runtime/runtimeAdapter';
 import { analyzeWebSearchTrigger } from './runtime/networkLog';
+import type { WebSearchMeta } from './store';
 
 const API_BASE = 'https://api.minimax.chat';
 const MODEL = 'MiniMax-M2.7-highspeed';
@@ -53,9 +54,9 @@ const MCP_TOOLS = [
   }
 ];
 
-type NetworkContext = { query: string; results: string; source?: string };
+type NetworkContext = { query: string; results: string; source?: string; rawResults?: any[] };
 type MiniMaxChatMessage = { role: 'user' | 'assistant'; content: string };
-type NetworkSearchData = { query: string; resultCount: number; source: string };
+type NetworkSearchData = { query: string; resultCount: number; source: string; rawResults?: any[] };
 type MessageContextMenu = { x: number; y: number; content: string };
 
 const HISTORY_BLOCKLIST = [
@@ -179,6 +180,7 @@ export function ChatPanel() {
   const [toast, setToast] = useState('');
   const [contextMenu, setContextMenu] = useState<MessageContextMenu | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const lastWebSearchMetaRef = useRef<WebSearchMeta | null>(null);
   const { aiConfig, messages, addMessage, updateEmotionFromChat, memories, setCurrentExpression, networkSettings } = useAppStore();
   const msgCount = messages.length;
   const stopDragPropagation = (e: React.MouseEvent) => e.stopPropagation();
@@ -214,7 +216,17 @@ export function ChatPanel() {
   const buildSystemPrompt = (networkContext?: NetworkContext) => {
     const { characterSettings, memories } = useAppStore.getState();
     const personalities = characterSettings.personality.join('、');
+
+    // 语言规则（放在靠前位置）
+    const languageRule = `\n\n【语言规则】
+- 默认使用简体中文回答，不要中英混杂
+- 除非用户明确要求英文、翻译、代码、英文术语，否则不要输出英文句子
+- 技术名词（如 MiniMax Web Search、GitHub 等）可保留英文，但解释必须中文
+- 代码、URL、文件路径、命令、API 名称不要翻译
+- 保持小伊活泼俏皮的人设风格`;
+
     let prompt = `你是${characterSettings.name}，一个${personalities}的AI少女。你用~呀啦哦呢嘿等语气词结尾。不要太长，保持活泼俏皮的风格。
+${languageRule}
 
 你可以使用以下工具：
 - analyzeScreen(): 截屏并分析屏幕上有什么
@@ -228,20 +240,34 @@ export function ChatPanel() {
     // 如果有联网搜索结果，添加到系统提示
     if (networkContext) {
       prompt += `\n\n【联网搜索信息：真实联网搜索结果】
-用户问题：
-${networkContext.query}
+用户问题：${networkContext.query}
 
-以下是真实联网搜索结果，请基于这些结果回答。不要说你没有联网能力，不要说你不能联网。
+以下是真实联网搜索结果，请基于这些结果回答。不要说你没有联网能力，不要说你不能联网，不要说你无法上网。
 
 搜索结果：
 ${networkContext.results}
 
-回答要求：
-- 用中文回答
-- 先概括项目是什么
-- 再列出关键信息
-- 如搜索结果不足，明确说明不足
-- 不要编造`;
+回答格式要求（必须严格按此格式输出）：
+【结论】
+用1-2句话说明答案。
+
+【关键信息】
+1. 信息点一
+2. 信息点二
+3. 信息点三（如果搜索结果不足3条则列出实际条数）
+
+【来源】
+1. 标题 - 链接
+2. 标题 - 链接
+3. 标题 - 链接
+
+【补充说明】
+如果搜索结果不足、存在不确定性或无法回答，在这里说明。
+
+禁止：
+- 不要说"我没有联网能力"、"我不能联网"、"无法上网"
+- 不要编造搜索结果中没有的信息
+- 不要用 reasoning_content 代替 content 回复`;
     }
 
     if (memories.length > 0) {
@@ -420,6 +446,85 @@ ${networkContext.results}
       `${i + 1}. 标题：${r.title || '无标题'}\n   链接：${r.url || ''}\n   摘要：${r.snippet || ''}`
     ).join('\n\n');
 
+  // 解析 system 消息中的联网搜索元数据
+  function parseWebSearchMeta(content: string, rawResults?: any[]): WebSearchMeta | null {
+    // 匹配: 🌐 已联网搜索：关键词 (数量条结果，来自来源)
+    const match = content.match(/🌐 已联网搜索[：:]\s*(.+?)\s*\((\d+)条结果，来自(.+?)\)/);
+    if (!match) return null;
+    return {
+      provider: 'minimax_web_search',
+      isMock: false,
+      query: match[1].trim(),
+      resultCount: parseInt(match[2], 10),
+      source: match[3].trim(),
+      results: rawResults || [],
+    };
+  }
+
+  // 联网搜索结构化展示卡片
+  function WebSearchResultCard({ meta }: { meta: WebSearchMeta }) {
+    return (
+      <div
+        className="rounded-xl text-xs overflow-hidden my-1"
+        style={{
+          background: 'rgba(6,182,212,0.08)',
+          border: '1px solid rgba(6,182,212,0.25)',
+        }}
+      >
+        {/* 头部状态栏 */}
+        <div
+          className="px-3 py-2 flex items-center justify-between"
+          style={{ background: 'rgba(6,182,212,0.15)', borderBottom: '1px solid rgba(6,182,212,0.2)' }}
+        >
+          <div className="flex items-center gap-2">
+            <span className="text-sm">🌐</span>
+            <span style={{ color: '#06b6d4', fontWeight: 600 }}>已联网搜索</span>
+            <span style={{ color: '#555' }}>·</span>
+            <span style={{ color: '#888' }}>{meta.query}</span>
+          </div>
+          <div className="flex items-center gap-3">
+            <span style={{ color: '#06b6d4' }}>{meta.resultCount} 条结果</span>
+            <span
+              className="px-1.5 py-0.5 rounded text-[10px]"
+              style={{ background: 'rgba(34,197,94,0.2)', color: '#22c55e' }}
+            >
+              真实联网
+            </span>
+          </div>
+        </div>
+
+        {/* 来源列表 */}
+        {meta.results && meta.results.length > 0 && (
+          <div className="p-2 space-y-1.5">
+            <div className="text-[10px] px-1" style={{ color: '#555' }}>【来源】</div>
+            {meta.results.slice(0, 5).map((r, i) => (
+              <div key={i} className="px-2 py-1.5 rounded-lg" style={{ background: 'rgba(0,0,0,0.2)' }}>
+                <div className="flex items-start gap-1.5">
+                  <span className="text-[10px] flex-shrink-0 mt-0.5" style={{ color: '#06b6d4' }}>{i + 1}.</span>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-xs font-medium truncate" style={{ color: '#e2e8f0' }}>
+                      {r.title || '无标题'}
+                    </div>
+                    {r.snippet && (
+                      <div className="text-[10px] mt-0.5 line-clamp-2" style={{ color: '#64748b' }}>
+                        {r.snippet}
+                      </div>
+                    )}
+                    {r.url && (
+                      <div className="text-[10px] mt-0.5 truncate" style={{ color: '#3b82f6' }}>
+                        {r.url.length > 50 ? r.url.substring(0, 50) + '...' : r.url}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
   const prepareNetworkContext = async (query: string): Promise<{
     networkContext?: NetworkContext;
     networkSearchData?: NetworkSearchData;
@@ -441,11 +546,13 @@ ${networkContext.results}
           query: searchResult.query,
           results: formattedResults,
           source: searchResult.source,
+          rawResults: searchResult.results,
         },
         networkSearchData: {
           query: searchResult.query,
           resultCount: searchResult.results.length,
           source: searchResult.source,
+          rawResults: searchResult.results,
         },
       };
     }
@@ -506,6 +613,14 @@ ${networkContext.results}
         return;
       }
 
+      lastWebSearchMetaRef.current = {
+        provider: 'minimax_web_search',
+        isMock: false,
+        query: networkSearchData.query,
+        resultCount: networkSearchData.resultCount,
+        source: networkSearchData.source,
+        results: networkSearchData.rawResults || [],
+      };
       await addMessage({
         role: 'system',
         content: `🌐 已联网搜索：${networkSearchData.query} (${networkSearchData.resultCount}条结果，来自${networkSearchData.source})`,
@@ -569,6 +684,14 @@ ${networkContext.results}
     
     // 如果有联网搜索标识，立即显示
     if (networkSearchData) {
+      lastWebSearchMetaRef.current = {
+        provider: 'minimax_web_search',
+        isMock: false,
+        query: networkSearchData.query,
+        resultCount: networkSearchData.resultCount,
+        source: networkSearchData.source,
+        results: networkSearchData.rawResults || [],
+      };
       await addMessage({ 
         role: 'system', 
         content: `🌐 已联网搜索：${networkSearchData.query} (${networkSearchData.resultCount}条结果，来自${networkSearchData.source})`
@@ -668,6 +791,21 @@ ${networkContext.results}
         {messages.map((msg, index) => {
           // system 消息（联网搜索标识）用特殊样式显示
           if (msg.role === 'system') {
+            const isWebSearch = msg.content.startsWith('🌐 已联网搜索');
+            const webMeta = isWebSearch ? lastWebSearchMetaRef.current : null;
+
+            if (isWebSearch && webMeta && webMeta.results.length > 0) {
+              return (
+                <div key={index} className="flex justify-start">
+                  <div className="max-w-[85%]">
+                    <WebSearchResultCard meta={webMeta} />
+                    {/* 清空 ref 防止重复显示 */}
+                    lastWebSearchMetaRef.current = null;
+                  </div>
+                </div>
+              );
+            }
+
             return (
               <div key={index} className="flex justify-start">
                 <div

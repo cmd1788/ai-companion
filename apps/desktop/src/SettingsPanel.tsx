@@ -1,11 +1,13 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAppStore } from './store';
+import { createScheduledTask, deleteScheduledTask, updateScheduledTask, toggleScheduledTask, loadScheduledTasks } from './scheduledTask';
+import type { ScheduledTask, ScheduledTaskType } from './store';
 
 interface SettingsPanelProps {
   onClose?: () => void;
 }
 
-type SettingsTab = 'character' | 'memory' | 'system' | 'model' | 'network' | 'style';
+type SettingsTab = 'character' | 'memory' | 'system' | 'model' | 'network' | 'style' | 'scheduler';
 
 export function SettingsPanel({ onClose }: SettingsPanelProps) {
   const [activeTab, setActiveTab] = useState<SettingsTab>('character');
@@ -33,6 +35,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
     photoPath, setPhotoPath,
     networkSettings, setNetworkSettings,
     memories,
+    setScheduledTasks,
   } = useAppStore();
 
   // 性格选项
@@ -76,6 +79,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
     { key: 'model' as const, label: '🤖 模型设置', icon: '🤖', color: '#22c55e', desc: 'API配置、连接测试' },
     { key: 'network' as const, label: '🌐 联网中心', icon: '🌐', color: '#06b6d4', desc: 'API Key、联网搜索、图片生成' },
     { key: 'style' as const, label: '🎨 风格页面', icon: '🎨', color: '#f59e0b', desc: '界面显示、功能开关' },
+    { key: 'scheduler' as const, label: '⏰ 定时任务', icon: '⏰', color: '#f97316', desc: '定时提醒、周期任务' },
   ];
 
   const togglePersonality = (tag: string) => {
@@ -1369,8 +1373,401 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
               </div>
             </div>
           )}
+
+          {/* ========== 定时任务 ========== */}
+          {activeTab === 'scheduler' && (
+            <div className="max-w-3xl space-y-6">
+              <SchedulerTaskManager />
+            </div>
+          )}
         </div>
       </div>
     </div>
   );
 }
+
+// 任务管理完整组件（新建+编辑+列表）
+function SchedulerTaskManager() {
+  const [tasks, setTasks] = useState<ScheduledTask[]>([]);
+  const [showForm, setShowForm] = useState(false);
+  const [editingTask, setEditingTask] = useState<ScheduledTask | null>(null);
+
+  // 表单状态
+  const [formTitle, setFormTitle] = useState('');
+  const [formContent, setFormContent] = useState('');
+  const [formType, setFormType] = useState<ScheduledTaskType>('interval');
+  const [formTimeOfDay, setFormTimeOfDay] = useState('09:00');
+  const [formInterval, setFormInterval] = useState(60);
+  const [formRunAt, setFormRunAt] = useState('');
+
+  const loadTasks = () => setTasks(loadScheduledTasks());
+
+  useEffect(() => {
+    loadTasks();
+  }, []);
+
+  const openNewForm = () => {
+    setEditingTask(null);
+    setFormTitle('');
+    setFormContent('');
+    setFormType('interval');
+    setFormTimeOfDay('09:00');
+    setFormInterval(60);
+    setFormRunAt('');
+    setShowForm(true);
+  };
+
+  const openEditForm = (task: ScheduledTask) => {
+    setEditingTask(task);
+    setFormTitle(task.title);
+    setFormContent(task.content);
+    setFormType(task.type);
+    setFormTimeOfDay(task.timeOfDay || '09:00');
+    setFormInterval(task.intervalMinutes || 60);
+    setFormRunAt(task.runAt ? task.runAt.slice(0, 16) : ''); // YYYY-MM-DDTHH:mm
+    setShowForm(true);
+  };
+
+  const closeForm = () => {
+    setShowForm(false);
+    setEditingTask(null);
+  };
+
+  const handleSave = () => {
+    // 验证
+    if (!formTitle.trim()) {
+      alert('请输入任务名称');
+      return;
+    }
+    if (!formContent.trim()) {
+      alert('请输入任务内容');
+      return;
+    }
+    if (formType === 'interval' && formInterval < 1) {
+      alert('间隔时间不能小于1分钟');
+      return;
+    }
+    if (formType === 'once' && !formRunAt) {
+      alert('请选择执行时间');
+      return;
+    }
+
+    if (editingTask) {
+      // 编辑模式
+      updateScheduledTask(editingTask.id, {
+        title: formTitle.trim(),
+        content: formContent.trim(),
+        type: formType,
+        timeOfDay: formType === 'daily' ? formTimeOfDay : undefined,
+        intervalMinutes: formType === 'interval' ? formInterval : undefined,
+        runAt: formType === 'once' ? new Date(formRunAt).toISOString() : undefined,
+      });
+    } else {
+      // 新建模式
+      createScheduledTask({
+        title: formTitle.trim(),
+        content: formContent.trim(),
+        type: formType,
+        timeOfDay: formType === 'daily' ? formTimeOfDay : undefined,
+        intervalMinutes: formType === 'interval' ? formInterval : undefined,
+        runAt: formType === 'once' ? new Date(formRunAt).toISOString() : undefined,
+      });
+    }
+
+    loadTasks();
+    closeForm();
+  };
+
+  const handleDelete = (id: string) => {
+    if (!confirm('确认删除这个任务？')) return;
+    deleteScheduledTask(id);
+    loadTasks();
+  };
+
+  const handleToggle = (id: string) => {
+    toggleScheduledTask(id);
+    loadTasks();
+  };
+
+  const formatNextRun = (task: ScheduledTask): string => {
+    if (!task.nextRunAt) return '未知';
+    if (!task.enabled) return '已停用';
+    if (task.type === 'once' && task.completedAt) return '已完成';
+    try {
+      const d = new Date(task.nextRunAt);
+      const now = new Date();
+      const diffMs = d.getTime() - now.getTime();
+      if (diffMs < 0) return '已到期';
+      const diffMin = Math.floor(diffMs / 60000);
+      if (diffMin < 1) return '即将执行';
+      if (diffMin < 60) return `${diffMin}分钟后`;
+      const diffHr = Math.floor(diffMin / 60);
+      if (diffHr < 24) return `${diffHr}小时${diffMin % 60}分钟后`;
+      return d.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+    } catch {
+      return task.nextRunAt;
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* 头部：新建按钮 */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className="text-lg">⏰</span>
+          <h3 className="text-base font-semibold" style={{ color: '#f97316' }}>定时任务</h3>
+          <span className="text-xs px-2 py-0.5 rounded" style={{ background: 'rgba(249,115,22,0.2)', color: '#f97316' }}>
+            {tasks.length}个任务
+          </span>
+        </div>
+        <button
+          onClick={openNewForm}
+          className="px-4 py-2 rounded-xl text-sm font-medium transition-all hover:opacity-80"
+          style={{ background: 'linear-gradient(135deg, #f97316, #fb923c)', color: '#fff' }}
+        >
+          + 新建任务
+        </button>
+      </div>
+
+      {/* 新建/编辑表单 */}
+      {showForm && (
+        <div
+          className="p-6 rounded-2xl"
+          style={{ background: 'rgba(249,115,22,0.12)', border: '1px solid rgba(249,115,22,0.3)' }}
+        >
+          <h4 className="text-sm font-semibold mb-4" style={{ color: '#f97316' }}>
+            {editingTask ? '✏️ 编辑任务' : '➕ 新建任务'}
+          </h4>
+
+          <div className="space-y-4">
+            {/* 任务名称 */}
+            <div>
+              <label className="block text-xs mb-1" style={{ color: '#888' }}>任务名称</label>
+              <input
+                type="text"
+                value={formTitle}
+                onChange={e => setFormTitle(e.target.value)}
+                placeholder="例如：工作总结提醒"
+                className="w-full px-4 py-3 rounded-xl text-sm"
+                style={{ background: 'rgba(255,255,255,0.08)', color: '#fff', border: '1px solid rgba(255,255,255,0.12)' }}
+              />
+            </div>
+
+            {/* 任务内容 */}
+            <div>
+              <label className="block text-xs mb-1" style={{ color: '#888' }}>任务内容</label>
+              <textarea
+                value={formContent}
+                onChange={e => setFormContent(e.target.value)}
+                placeholder="例如：提醒我总结今天的工作进展，用中文回答我三个问题"
+                rows={3}
+                className="w-full px-4 py-3 rounded-xl text-sm resize-none"
+                style={{ background: 'rgba(255,255,255,0.08)', color: '#fff', border: '1px solid rgba(255,255,255,0.12)' }}
+              />
+            </div>
+
+            {/* 任务类型 */}
+            <div>
+              <label className="block text-xs mb-2" style={{ color: '#888' }}>执行方式</label>
+              <div className="flex gap-2">
+                {([
+                  { value: 'once' as const, label: '一次性' },
+                  { value: 'daily' as const, label: '每天' },
+                  { value: 'interval' as const, label: '间隔' },
+                ]).map(opt => (
+                  <button
+                    key={opt.value}
+                    onClick={() => setFormType(opt.value)}
+                    className="px-4 py-2 rounded-xl text-sm transition-all"
+                    style={{
+                      background: formType === opt.value
+                        ? 'linear-gradient(135deg, #f97316, #fb923c)'
+                        : 'rgba(255,255,255,0.08)',
+                      color: '#fff',
+                      border: formType === opt.value ? 'none' : '1px solid rgba(255,255,255,0.12)',
+                    }}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* 类型相关字段 */}
+            {formType === 'daily' && (
+              <div>
+                <label className="block text-xs mb-1" style={{ color: '#888' }}>每天执行时间</label>
+                <input
+                  type="time"
+                  value={formTimeOfDay}
+                  onChange={e => setFormTimeOfDay(e.target.value)}
+                  className="px-4 py-3 rounded-xl text-sm"
+                  style={{ background: 'rgba(255,255,255,0.08)', color: '#fff', border: '1px solid rgba(255,255,255,0.12)' }}
+                />
+              </div>
+            )}
+
+            {formType === 'interval' && (
+              <div>
+                <label className="block text-xs mb-1" style={{ color: '#888' }}>间隔分钟数（分钟）</label>
+                <input
+                  type="number"
+                  min={1}
+                  value={formInterval}
+                  onChange={e => setFormInterval(Math.max(1, parseInt(e.target.value) || 1))}
+                  className="w-full px-4 py-3 rounded-xl text-sm"
+                  style={{ background: 'rgba(255,255,255,0.08)', color: '#fff', border: '1px solid rgba(255,255,255,0.12)' }}
+                />
+                <div className="text-xs mt-1" style={{ color: '#555' }}>
+                  提示：间隔时间不能小于1分钟
+                </div>
+              </div>
+            )}
+
+            {formType === 'once' && (
+              <div>
+                <label className="block text-xs mb-1" style={{ color: '#888' }}>执行时间</label>
+                <input
+                  type="datetime-local"
+                  value={formRunAt}
+                  onChange={e => setFormRunAt(e.target.value)}
+                  className="w-full px-4 py-3 rounded-xl text-sm"
+                  style={{ background: 'rgba(255,255,255,0.08)', color: '#fff', border: '1px solid rgba(255,255,255,0.12)' }}
+                />
+              </div>
+            )}
+
+            {/* 按钮行 */}
+            <div className="flex gap-3 pt-2">
+              <button
+                onClick={handleSave}
+                className="px-6 py-2 rounded-xl text-sm font-medium transition-all hover:opacity-80"
+                style={{ background: 'linear-gradient(135deg, #f97316, #fb923c)', color: '#fff' }}
+              >
+                {editingTask ? '保存修改' : '创建任务'}
+              </button>
+              <button
+                onClick={closeForm}
+                className="px-6 py-2 rounded-xl text-sm font-medium transition-all"
+                style={{ background: 'rgba(255,255,255,0.1)', color: '#888' }}
+              >
+                取消
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 任务列表 */}
+      {tasks.length === 0 && !showForm ? (
+        <div
+          className="p-8 rounded-2xl text-center"
+          style={{ background: 'rgba(249,115,22,0.08)', border: '1px solid rgba(249,115,22,0.2)' }}
+        >
+          <div className="text-4xl mb-3">⏰</div>
+          <div className="text-sm" style={{ color: '#888' }}>暂无定时任务</div>
+          <div className="text-xs mt-1" style={{ color: '#555' }}>点击上方"新建任务"创建一个</div>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {tasks.map(task => (
+            <div
+              key={task.id}
+              className="p-4 rounded-2xl"
+              style={{
+                background: task.enabled
+                  ? 'rgba(249,115,22,0.08)'
+                  : 'rgba(255,255,255,0.04)',
+                border: `1px solid ${task.enabled ? 'rgba(249,115,22,0.2)' : 'rgba(255,255,255,0.08)'}`,
+                opacity: task.enabled ? 1 : 0.7,
+              }}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex-1 min-w-0">
+                  {/* 任务标题和类型标签 */}
+                  <div className="flex items-center gap-2 mb-1 flex-wrap">
+                    <span
+                      className="px-2 py-0.5 rounded text-xs font-medium"
+                      style={{
+                        background: task.enabled ? 'rgba(249,115,22,0.3)' : 'rgba(255,255,255,0.1)',
+                        color: task.enabled ? '#f97316' : '#666',
+                      }}
+                    >
+                      {task.type === 'once' ? '一次性' : task.type === 'daily' ? '每天' : '间隔'}
+                    </span>
+                    <span
+                      className={`px-2 py-0.5 rounded text-xs font-medium ${task.enabled ? '' : 'line-through'}`}
+                      style={{ color: task.enabled ? '#fff' : '#666' }}
+                    >
+                      {task.title}
+                    </span>
+                    {task.type === 'once' && task.completedAt && (
+                      <span className="px-2 py-0.5 rounded text-xs" style={{ background: 'rgba(34,197,94,0.2)', color: '#22c55e' }}>
+                        已完成
+                      </span>
+                    )}
+                  </div>
+
+                  {/* 任务内容预览 */}
+                  <div className="text-xs mb-2 line-clamp-2" style={{ color: '#888' }}>
+                    {task.content}
+                  </div>
+
+                  {/* 时间信息行 */}
+                  <div className="flex items-center gap-4 text-xs flex-wrap" style={{ color: '#555' }}>
+                    {task.type === 'interval' && task.intervalMinutes && (
+                      <span>📏 每隔 {task.intervalMinutes} 分钟</span>
+                    )}
+                    {task.type === 'daily' && task.timeOfDay && (
+                      <span>🕐 每天 {task.timeOfDay}</span>
+                    )}
+                    {task.type === 'once' && task.runAt && (
+                      <span>🗓️ {new Date(task.runAt).toLocaleString('zh-CN')}</span>
+                    )}
+                    <span>▶️ 下次：{formatNextRun(task)}</span>
+                    {task.lastRunAt && (
+                      <span>⏮️ 上次：{new Date(task.lastRunAt).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
+                    )}
+                    <span>🔄 共执行 {task.runCount} 次</span>
+                  </div>
+                </div>
+
+                {/* 操作按钮组 */}
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <button
+                    onClick={() => openEditForm(task)}
+                    className="w-8 h-8 rounded-lg flex items-center justify-center transition-all hover:opacity-70"
+                    style={{ background: 'rgba(59,130,246,0.2)', color: '#3b82f6' }}
+                    title="编辑"
+                  >
+                    ✏️
+                  </button>
+                  <button
+                    onClick={() => handleToggle(task.id)}
+                    className="w-10 h-6 rounded-full transition-all relative"
+                    style={{ background: task.enabled ? '#f97316' : 'rgba(255,255,255,0.2)' }}
+                    title={task.enabled ? '停用' : '启用'}
+                  >
+                    <div
+                      className="w-4 h-4 rounded-full absolute top-1 bg-white transition-all"
+                      style={{ left: task.enabled ? '20px' : '3px' }}
+                    />
+                  </button>
+                  <button
+                    onClick={() => handleDelete(task.id)}
+                    className="w-8 h-8 rounded-lg flex items-center justify-center transition-all hover:opacity-70"
+                    style={{ background: 'rgba(239,68,68,0.2)', color: '#ef4444' }}
+                    title="删除"
+                  >
+                    ×
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
