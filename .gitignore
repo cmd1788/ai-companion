@@ -3,3 +3,16 @@ dist/
 target/
 *.log
 .DS_Store
+
+# Audio cache
+audio_cache/
+
+# Temporary test artifacts
+*_result.json
+tts_release_*.png
+proactive_release_*.png
+character_pack_*.png
+screenshots/
+
+# Exception: allow character assets to be committed
+!characters/
