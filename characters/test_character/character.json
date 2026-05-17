@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "id": "test_character",
+  "name": "测试工程助手",
+  "displayName": "测试工程助手",
+  "description": "用于验收 Character Pack 切换的人设、头像和 voiceId。",
+  "author": "codex",
+  "version": "1.0.0",
+  "language": "zh-CN",
+  "personaFile": "persona.md",
+  "voiceFile": "voice.json",
+  "assets": {
+    "avatar": "assets/avatar.png"
+  },
+  "features": {
+    "enableVoice": true,
+    "enableAutoRead": false,
+    "enableProactiveChat": false,
+    "enableEmotionImage": true,
+    "enableMemorySeed": false
+  }
+}

@@ -36,12 +36,26 @@ import {
   VOICE_PRESET_OPTIONS,
 } from './voice';
 import type { VoiceAudioRecord, VoiceSettings } from './voice';
+import type { CharacterPack } from './character/characterTypes';
+import {
+  applyCharacterDefaults,
+  DEFAULT_CHARACTER_ROOT,
+  importCharacterMemorySeed,
+  isMemorySeedImported,
+  openCharacterPath,
+  readCharacterAssetAsDataUrl,
+  resolveCharacterAssetPath,
+  restoreCharacterDefaults,
+  saveCurrentCharacterProactiveOverride,
+  saveCurrentCharacterVoiceOverride,
+  scanCharacterPacks,
+} from './character/characterService';
 
 interface SettingsPanelProps {
   onClose?: () => void;
 }
 
-type SettingsTab = 'character' | 'memory' | 'system' | 'model' | 'network' | 'style' | 'voice' | 'proactive' | 'scheduler';
+type SettingsTab = 'characterPack' | 'character' | 'memory' | 'system' | 'model' | 'network' | 'style' | 'voice' | 'proactive' | 'scheduler';
 
 export function SettingsPanel({ onClose }: SettingsPanelProps) {
   const [activeTab, setActiveTab] = useState<SettingsTab>('character');
@@ -107,6 +121,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
 
   // Tab 配置
   const tabs = [
+    { key: 'characterPack' as const, label: '🧩 角色中心', icon: '🧩', color: '#14b8a6', desc: 'Character Pack 扫描、校验和切换' },
     { key: 'character' as const, label: '👤 人物设定', icon: '👤', color: '#e94560', desc: '角色性格、外观、背景' },
     { key: 'memory' as const, label: '🧠 记忆系统', icon: '🧠', color: '#a855f7', desc: '记忆保存天数、清理策略' },
     { key: 'system' as const, label: '⚙️ 系统设定', icon: '⚙️', color: '#3b82f6', desc: '截屏观察、主动回复' },
@@ -290,6 +305,13 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
 
         {/* 内容 */}
         <div className="flex-1 overflow-y-auto p-8">
+          {/* ========== 角色中心 ========== */}
+          {activeTab === 'characterPack' && (
+            <div className="max-w-5xl space-y-6">
+              <CharacterPackCenter />
+            </div>
+          )}
+
           {/* ========== 人物设定 ========== */}
           {activeTab === 'character' && (
             <div className="max-w-3xl space-y-8">
@@ -1494,6 +1516,248 @@ function formatRecordTime(iso: string): string {
   }
 }
 
+function CharacterAvatar({ pack, size = 64 }: { pack: CharacterPack | null | undefined; size?: number }) {
+  const [url, setUrl] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadAvatar() {
+      const path = pack
+        ? resolveCharacterAssetPath(pack, pack.assets.avatar || pack.assets.fullbody || pack.assets.idle)
+        : null;
+      if (!path) {
+        setUrl('');
+        return;
+      }
+      const dataUrl = await readCharacterAssetAsDataUrl(path);
+      if (!cancelled) setUrl(dataUrl || '');
+    }
+    loadAvatar();
+    return () => {
+      cancelled = true;
+    };
+  }, [pack]);
+
+  return (
+    <div
+      className="flex items-center justify-center overflow-hidden"
+      style={{
+        width: size,
+        height: size,
+        borderRadius: 12,
+        background: 'rgba(255,255,255,0.08)',
+        border: '1px solid rgba(255,255,255,0.12)',
+      }}
+    >
+      {url ? <img src={url} alt={pack?.displayName || pack?.name || '角色头像'} className="w-full h-full object-cover" /> : <span className="text-xl">🧩</span>}
+    </div>
+  );
+}
+
+function CharacterValidationView({ pack }: { pack: CharacterPack }) {
+  const { validation } = pack;
+  const lines = [
+    ...validation.errors.map(item => ({ type: '错误', text: item, color: '#f87171' })),
+    ...validation.warnings.map(item => ({ type: '警告', text: item, color: '#facc15' })),
+    ...validation.missingFiles.map(item => ({ type: '缺失文件', text: item, color: '#fb923c' })),
+    ...validation.sensitiveFieldsFound.map(item => ({ type: '敏感字段', text: item, color: '#f87171' })),
+  ];
+
+  if (lines.length === 0) {
+    return <div className="text-xs" style={{ color: '#22c55e' }}>校验通过，没有发现错误。</div>;
+  }
+
+  return (
+    <div className="space-y-2">
+      {lines.slice(0, 10).map((line, index) => (
+        <div key={`${line.type}-${index}`} className="text-xs px-3 py-2 rounded-lg" style={{ background: 'rgba(0,0,0,0.25)', color: line.color }}>
+          {line.type}：{line.text}
+        </div>
+      ))}
+      {lines.length > 10 && <div className="text-xs" style={{ color: '#8aa3b5' }}>还有 {lines.length - 10} 条校验信息</div>}
+    </div>
+  );
+}
+
+function CharacterPackCenter() {
+  const {
+    characterPacks,
+    currentCharacterPack,
+    setCharacterPacks,
+    setCurrentCharacterPack,
+    setCharacter,
+    characterSettings,
+    setCharacterSettings,
+  } = useAppStore();
+  const [scanState, setScanState] = useState<'idle' | 'scanning' | 'success' | 'error'>('idle');
+  const [selectedPackId, setSelectedPackId] = useState<string | null>(currentCharacterPack?.id || null);
+  const [message, setMessage] = useState('');
+
+  const selectedPack = characterPacks.find(pack => pack.id === selectedPackId) || currentCharacterPack || characterPacks[0] || null;
+  const usableCount = characterPacks.filter(pack => pack.validation.ok && !pack.isTemplate).length;
+
+  const applyPackToStore = (pack: CharacterPack) => {
+    setCurrentCharacterPack(pack);
+    setCharacter({
+      id: pack.id,
+      name: pack.displayName || pack.name,
+      personality: pack.personaText ? [pack.personaText.slice(0, 60)] : [],
+    });
+    setCharacterSettings({
+      ...characterSettings,
+      name: pack.displayName || pack.name,
+      customDescription: pack.personaText || pack.description || '',
+    });
+  };
+
+  const rescan = async () => {
+    setScanState('scanning');
+    setMessage('');
+    try {
+      const scan = await scanCharacterPacks();
+      setCharacterPacks(scan.packs);
+      const nextSelected = scan.packs.find(pack => pack.id === selectedPackId)
+        || scan.packs.find(pack => pack.id === currentCharacterPack?.id)
+        || scan.packs.find(pack => pack.id === 'xiaoyi')
+        || scan.packs[0]
+        || null;
+      setSelectedPackId(nextSelected?.id || null);
+      setScanState('success');
+      setMessage(`扫描完成：${scan.packs.length} 个角色包，${scan.packs.filter(pack => pack.validation.ok && !pack.isTemplate).length} 个可用。`);
+    } catch (error) {
+      setScanState('error');
+      setMessage(`扫描失败：${String(error)}`);
+    }
+  };
+
+  useEffect(() => {
+    if (characterPacks.length === 0) void rescan();
+  }, []);
+
+  const usePack = (pack: CharacterPack) => {
+    if (pack.isTemplate) {
+      setMessage('模板包用于复制创建角色，不能直接切换。');
+      return;
+    }
+    if (!pack.validation.ok) {
+      setMessage('角色包校验未通过，不能切换。');
+      return;
+    }
+    applyCharacterDefaults(pack);
+    applyPackToStore(pack);
+    restartProactiveChat();
+    setSelectedPackId(pack.id);
+    setMessage(`已切换到 ${pack.displayName || pack.name}，后续回复、人设、头像、语音默认值和主动聊天默认值已更新。`);
+  };
+
+  const restoreDefaults = () => {
+    if (!currentCharacterPack) {
+      setMessage('当前没有可恢复的角色默认设置。');
+      return;
+    }
+    restoreCharacterDefaults(currentCharacterPack);
+    restartProactiveChat();
+    setMessage(`已恢复 ${currentCharacterPack.displayName || currentCharacterPack.name} 的角色默认语音和主动聊天设置。`);
+  };
+
+  const importSeed = async (pack: CharacterPack) => {
+    const count = await importCharacterMemorySeed(pack);
+    setMessage(count > 0 ? `已导入 ${count} 条角色记忆种子，不会覆盖用户真实记忆。` : '该角色记忆种子已导入过，未重复导入。');
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-[1.1fr_1.4fr] gap-5">
+        <div className="p-6 rounded-2xl" style={{ background: 'rgba(20,184,166,0.08)', border: '1px solid rgba(20,184,166,0.22)' }}>
+          <div className="flex items-start gap-4">
+            <CharacterAvatar pack={currentCharacterPack} size={76} />
+            <div className="min-w-0">
+              <div className="text-xs mb-1" style={{ color: '#8aa3b5' }}>当前角色</div>
+              <h3 className="text-xl font-semibold" style={{ color: '#fff' }}>{currentCharacterPack?.displayName || currentCharacterPack?.name || '未加载'}</h3>
+              <p className="text-sm mt-2 line-clamp-3" style={{ color: '#b7c4d1' }}>{currentCharacterPack?.description || '从 characters/ 目录扫描角色包后可切换。'}</p>
+              <div className="flex flex-wrap gap-2 mt-4 text-xs">
+                <span className="px-2 py-1 rounded" style={{ background: 'rgba(20,184,166,0.18)', color: '#5eead4' }}>voiceId: {currentCharacterPack?.voice?.voiceId || '系统默认'}</span>
+                <span className="px-2 py-1 rounded" style={{ background: 'rgba(56,189,248,0.15)', color: '#7dd3fc' }}>主动聊天: {currentCharacterPack?.proactive?.enabled ? '开启' : '默认/关闭'}</span>
+              </div>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-3 mt-5">
+            <button onClick={rescan} className="px-4 py-2 rounded-xl text-sm font-medium" style={{ background: '#14b8a6', color: '#05201d' }}>
+              {scanState === 'scanning' ? '扫描中...' : '重新扫描角色'}
+            </button>
+            <button onClick={() => openCharacterPath(DEFAULT_CHARACTER_ROOT)} className="px-4 py-2 rounded-xl text-sm" style={{ background: 'rgba(255,255,255,0.1)', color: '#fff' }}>打开角色目录</button>
+            <button onClick={() => openCharacterPath(DEFAULT_CHARACTER_ROOT)} className="px-4 py-2 rounded-xl text-sm" style={{ background: 'rgba(255,255,255,0.1)', color: '#fff' }}>导入角色包</button>
+            <button onClick={restoreDefaults} className="px-4 py-2 rounded-xl text-sm" style={{ background: 'rgba(250,204,21,0.16)', color: '#fde68a' }}>恢复角色默认设置</button>
+          </div>
+          {message && (
+            <div className="mt-4 text-sm px-4 py-3 rounded-xl" style={{ background: scanState === 'error' ? 'rgba(239,68,68,0.12)' : 'rgba(255,255,255,0.06)', color: scanState === 'error' ? '#fca5a5' : '#dbeafe' }}>
+              {message}
+            </div>
+          )}
+        </div>
+
+        <div className="p-6 rounded-2xl" style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }}>
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h3 className="text-base font-semibold" style={{ color: '#fff' }}>校验结果</h3>
+              <p className="text-xs mt-1" style={{ color: '#8aa3b5' }}>共 {characterPacks.length} 个角色包，{usableCount} 个可用。</p>
+            </div>
+            {selectedPack && (
+              <button onClick={() => openCharacterPath(selectedPack.basePath)} className="px-3 py-2 rounded-lg text-xs" style={{ background: 'rgba(255,255,255,0.1)', color: '#fff' }}>
+                打开文件夹
+              </button>
+            )}
+          </div>
+          {selectedPack ? <CharacterValidationView pack={selectedPack} /> : <div className="text-sm" style={{ color: '#8aa3b5' }}>暂无角色包。</div>}
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        <h3 className="text-base font-semibold" style={{ color: '#fff' }}>角色列表</h3>
+        {characterPacks.map(pack => (
+          <div
+            key={`${pack.id}-${pack.basePath}`}
+            className="p-4 rounded-2xl"
+            style={{
+              background: selectedPackId === pack.id ? 'rgba(20,184,166,0.11)' : 'rgba(255,255,255,0.04)',
+              border: `1px solid ${pack.validation.ok ? 'rgba(20,184,166,0.22)' : 'rgba(239,68,68,0.28)'}`,
+            }}
+          >
+            <div className="flex items-center gap-4">
+              <CharacterAvatar pack={pack} size={58} />
+              <button className="flex-1 min-w-0 text-left" onClick={() => setSelectedPackId(pack.id)}>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-semibold" style={{ color: '#fff' }}>{pack.displayName || pack.name}</span>
+                  <span className="text-xs px-2 py-0.5 rounded" style={{ background: pack.validation.ok ? 'rgba(34,197,94,0.16)' : 'rgba(239,68,68,0.16)', color: pack.validation.ok ? '#86efac' : '#fca5a5' }}>
+                    {pack.isTemplate ? '模板' : pack.validation.ok ? '校验通过' : '校验失败'}
+                  </span>
+                  {currentCharacterPack?.id === pack.id && <span className="text-xs px-2 py-0.5 rounded" style={{ background: 'rgba(20,184,166,0.18)', color: '#5eead4' }}>当前</span>}
+                </div>
+                <div className="text-xs mt-1 line-clamp-2" style={{ color: '#8aa3b5' }}>{pack.description || pack.basePath}</div>
+              </button>
+              <div className="flex gap-2 flex-shrink-0">
+                <button onClick={() => usePack(pack)} disabled={pack.isTemplate || !pack.validation.ok} className="px-3 py-2 rounded-lg text-xs disabled:opacity-40" style={{ background: '#14b8a6', color: '#05201d' }}>使用此角色</button>
+                <button onClick={() => openCharacterPath(pack.basePath)} className="px-3 py-2 rounded-lg text-xs" style={{ background: 'rgba(255,255,255,0.1)', color: '#fff' }}>打开文件夹</button>
+                <button onClick={() => setSelectedPackId(pack.id)} className="px-3 py-2 rounded-lg text-xs" style={{ background: 'rgba(59,130,246,0.16)', color: '#bfdbfe' }}>查看详情</button>
+                {pack.memorySeed?.memories?.length ? (
+                  <button onClick={() => importSeed(pack)} className="px-3 py-2 rounded-lg text-xs" style={{ background: isMemorySeedImported(pack.id) ? 'rgba(255,255,255,0.08)' : 'rgba(168,85,247,0.18)', color: '#ddd' }}>
+                    {isMemorySeedImported(pack.id) ? '记忆已导入' : '导入记忆种子'}
+                  </button>
+                ) : null}
+              </div>
+            </div>
+          </div>
+        ))}
+        {characterPacks.length === 0 && (
+          <div className="p-8 rounded-2xl text-center" style={{ background: 'rgba(255,255,255,0.04)', color: '#8aa3b5' }}>
+            没有扫描到角色包。请把符合规范的角色文件夹放入 {DEFAULT_CHARACTER_ROOT}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function VoiceSettingsPanel() {
   const { aiConfig, styleSettings, setStyleSettings } = useAppStore();
   const [settings, setSettings] = useState<VoiceSettings>(() => loadVoiceSettings());
@@ -1521,7 +1785,9 @@ function VoiceSettingsPanel() {
   };
 
   const patchSettings = (patch: Partial<VoiceSettings>) => {
-    return persistSettings({ ...settings, ...patch });
+    const saved = persistSettings({ ...settings, ...patch });
+    saveCurrentCharacterVoiceOverride(saved);
+    return saved;
   };
 
   const refreshRecords = () => setRecords(loadVoiceAudioRecords());
@@ -1831,7 +2097,9 @@ function ProactiveChatCenter() {
   };
 
   const patchSettings = (patch: Partial<ProactiveChatSettings>) => {
-    return persistSettings({ ...settings, ...patch });
+    const saved = persistSettings({ ...settings, ...patch });
+    saveCurrentCharacterProactiveOverride(saved);
+    return saved;
   };
 
   const updateContentType = (key: ContentTypeKey) => {

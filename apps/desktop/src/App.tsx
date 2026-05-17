@@ -8,6 +8,7 @@ import { useAppStore } from './store';
 import { startProactiveChat, stopProactiveChat, restartProactiveChat } from './proactiveChat';
 import { startScheduler } from './scheduledTask';
 import { runtime } from './runtime/runtimeAdapter';
+import { applyCharacterDefaults, getCurrentCharacterId, scanCharacterPacks } from './character/characterService';
 
 export default function App() {
   const [isSettingsOpen, setSettingsOpen] = useState(false);
@@ -34,6 +35,31 @@ export default function App() {
       } catch (e) {
         console.error('[App] Runtime init failed:', e);
         // 即使 runtime init 失败，也继续渲染 UI
+      }
+
+      try {
+        const scan = await scanCharacterPacks();
+        const usablePacks = scan.packs.filter(pack => pack.validation.ok && !pack.isTemplate);
+        const currentId = getCurrentCharacterId();
+        const currentPack = usablePacks.find(pack => pack.id === currentId) || usablePacks.find(pack => pack.id === 'xiaoyi') || usablePacks[0] || null;
+        useAppStore.getState().setCharacterPacks(scan.packs);
+        if (currentPack) {
+          useAppStore.getState().setCurrentCharacterPack(currentPack);
+          useAppStore.getState().setCharacter({
+            id: currentPack.id,
+            name: currentPack.displayName || currentPack.name,
+            personality: currentPack.personaText ? [currentPack.personaText.slice(0, 60)] : [],
+          });
+          useAppStore.getState().setCharacterSettings({
+            ...useAppStore.getState().characterSettings,
+            name: currentPack.displayName || currentPack.name,
+            customDescription: currentPack.personaText || currentPack.description || '',
+          });
+          applyCharacterDefaults(currentPack);
+        }
+        console.log(`[CharacterPack] scanned=${scan.packs.length} current=${currentPack?.id || 'none'}`);
+      } catch (e) {
+        console.warn('[CharacterPack] initial scan failed:', e);
       }
       
       // 初始化数据库

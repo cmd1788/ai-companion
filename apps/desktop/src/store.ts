@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { initDatabase, saveMessage, loadMessages, saveEmotion, loadEmotion, clearMessages as clearDbMessages, saveMemory, loadMemories } from './memory/db';
+import type { CharacterPack } from './character/characterTypes';
 
 // localStorage keys
 const STORAGE_KEYS = {
@@ -230,11 +231,15 @@ interface AppState {
   styleSettings: StyleSettings;
   systemSettings: SystemSettings;
   characterSettings: CharacterSettings;
+  characterPacks: CharacterPack[];
+  currentCharacterPack: CharacterPack | null;
   networkSettings: NetworkSettings;  // 联网设置
   // 新增设置方法
   setStyleSettings: (settings: StyleSettings) => void;
   setSystemSettings: (settings: SystemSettings) => void;
   setCharacterSettings: (settings: CharacterSettings) => void;
+  setCharacterPacks: (packs: CharacterPack[]) => void;
+  setCurrentCharacterPack: (pack: CharacterPack | null) => void;
   setNetworkSettings: (settings: NetworkSettings) => void;  // 联网设置方法
   resetNetworkSettings: () => void;  // 重置联网设置为 minimax_web_search
   setCharacter: (character: CharacterProfile) => void;
@@ -433,6 +438,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     name: '小伊',
     photoPath: 'E:/BaiduNetdiskDownload/2333/anon',
   },
+  characterPacks: [],
+  currentCharacterPack: null,
 
   // 联网设置默认值（从 localStorage 加载）
   networkSettings: loadNetworkSettingsFromStorage() || {
@@ -451,6 +458,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   setStyleSettings: (styleSettings) => set({ styleSettings }),
   setSystemSettings: (systemSettings) => set({ systemSettings }),
   setCharacterSettings: (characterSettings) => set({ characterSettings }),
+  setCharacterPacks: (characterPacks) => set({ characterPacks }),
+  setCurrentCharacterPack: (currentCharacterPack) => set({ currentCharacterPack }),
   setNetworkSettings: (networkSettings) => {
     const merged = typeof networkSettings === 'function'
       ? networkSettings(useAppStore.getState().networkSettings)

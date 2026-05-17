@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "id": "_template",
+  "name": "Character Pack Template",
+  "displayName": "角色包模板",
+  "description": "复制此目录创建新的 AI Companion 角色包。",
+  "author": "AI Companion",
+  "version": "1.0.0",
+  "language": "zh-CN",
+  "personaFile": "persona.md",
+  "voiceFile": "voice.json",
+  "proactiveFile": "proactive.json",
+  "memorySeedFile": "memory_seed.json",
+  "assets": {
+    "avatar": "assets/avatar.png",
+    "fullbody": "assets/fullbody.png",
+    "idle": "assets/idle.png",
+    "emotionsDir": "assets/emotions"
+  },
+  "emotionMap": {
+    "happy": "assets/emotions/happy.png",
+    "sad": "assets/emotions/sad.png",
+    "love": "assets/emotions/love.png",
+    "angry": "assets/emotions/angry.png",
+    "thinking": "assets/emotions/thinking.png",
+    "sleepy": "assets/emotions/sleepy.png"
+  },
+  "defaultEmotion": "happy",
+  "features": {
+    "enableVoice": true,
+    "enableAutoRead": false,
+    "enableProactiveChat": true,
+    "enableEmotionImage": true,
+    "enableMemorySeed": true
+  }
+}

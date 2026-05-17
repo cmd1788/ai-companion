@@ -1,0 +1,23 @@
+{
+  "provider": "minimax",
+  "apiKeySource": "network_center",
+  "model": "speech-2.8-hd",
+  "voiceId": "female-tianmei",
+  "voiceName": "默认甜美女声",
+  "speed": 1.05,
+  "vol": 1,
+  "pitch": 1,
+  "emotion": "happy",
+  "format": "mp3",
+  "sampleRate": 32000,
+  "bitrate": 128000,
+  "channel": 1,
+  "autoRead": {
+    "assistantReply": false,
+    "proactiveChat": true,
+    "scheduledTask": false
+  },
+  "rightClickRead": true,
+  "cleanTextBeforeRead": true,
+  "skipLinks": true
+}

@@ -1,0 +1,33 @@
+{
+  "enabled": true,
+  "personaPrompt": "写下角色主动说话时的人设。",
+  "topicScope": "写下允许主动聊的话题范围。",
+  "tonePreset": "gentle",
+  "customTone": "",
+  "forbiddenTopics": "不要中英混杂，不要输出英文推理，不要编造用户没有说过的信息。",
+  "enabledContentTypes": {
+    "care": true,
+    "projectReminder": true,
+    "interestNews": false,
+    "dailySummary": false,
+    "studyReminder": false,
+    "customMessage": false
+  },
+  "allowWebSearch": true,
+  "interestKeywords": [
+    "MiniMax",
+    "AI Companion"
+  ],
+  "trigger": {
+    "type": "interval",
+    "intervalMinutes": 60,
+    "timeOfDay": "09:00"
+  },
+  "limits": {
+    "minIntervalMinutes": 30,
+    "maxDailyMessages": 5,
+    "quietHoursEnabled": true,
+    "quietStart": "23:00",
+    "quietEnd": "08:00"
+  }
+}

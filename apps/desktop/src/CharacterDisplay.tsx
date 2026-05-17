@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useAppStore } from './store';
 import { runtime } from './runtime/runtimeAdapter';
+import { readCharacterAssetAsDataUrl, resolveCharacterDisplayAsset } from './character/characterService';
 
 // 表情图片映射
 const EXPRESSION_MAP: Record<string, string> = {
@@ -49,11 +50,12 @@ function toBase64(bytes: Uint8Array): string {
 }
 
 export function CharacterDisplay() {
-  const { photoPath, currentExpression, emotion, styleSettings } = useAppStore();
+  const { photoPath, currentExpression, emotion, styleSettings, currentCharacterPack } = useAppStore();
   const [showUserPhotos, setShowUserPhotos] = useState(false);
   const [photoIndex, setPhotoIndex] = useState(0);
   const [photoFiles, setPhotoFiles] = useState<string[]>([]);
   const [currentPhotoUrl, setCurrentPhotoUrl] = useState<string>('');
+  const [characterPackImageUrl, setCharacterPackImageUrl] = useState<string>('');
   const [isLoading, setIsLoading] = useState(true);
   const [currentMessage, setCurrentMessage] = useState('');
   const [isSpeaking, setIsSpeaking] = useState(false);
@@ -62,9 +64,10 @@ export function CharacterDisplay() {
 
   // 获取当前显示的表情图片
   const getCurrentExpressionSrc = useCallback(() => {
+    if (characterPackImageUrl) return characterPackImageUrl;
     const expressionFile = EXPRESSION_MAP[currentExpression] || EXPRESSION_MAP['01_happy'];
     return expressionFile;
-  }, [currentExpression]);
+  }, [currentExpression, characterPackImageUrl]);
 
   // 获取场景表情
   const getSceneExpression = useCallback((state: string) => {
@@ -152,6 +155,23 @@ export function CharacterDisplay() {
 
     loadCurrentPhoto();
   }, [photoFiles, photoIndex, photoPath, showUserPhotos]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadCharacterPackImage() {
+      const assetPath = resolveCharacterDisplayAsset(currentCharacterPack, currentExpression);
+      if (!assetPath) {
+        setCharacterPackImageUrl('');
+        return;
+      }
+      const dataUrl = await readCharacterAssetAsDataUrl(assetPath);
+      if (!cancelled) setCharacterPackImageUrl(dataUrl || '');
+    }
+    loadCharacterPackImage();
+    return () => {
+      cancelled = true;
+    };
+  }, [currentCharacterPack, currentExpression]);
 
   // 根据情绪更新状态
   useEffect(() => {

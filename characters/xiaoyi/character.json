@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "id": "xiaoyi",
+  "name": "小伊",
+  "displayName": "小伊",
+  "description": "温柔可爱、会陪你推进项目的 AI 桌宠助手。",
+  "author": "user",
+  "version": "1.0.0",
+  "language": "zh-CN",
+  "personaFile": "persona.md",
+  "voiceFile": "voice.json",
+  "proactiveFile": "proactive.json",
+  "memorySeedFile": "memory_seed.json",
+  "assets": {
+    "avatar": "assets/avatar.webp",
+    "fullbody": "assets/fullbody.webp",
+    "idle": "assets/idle.webp",
+    "emotionsDir": "assets/emotions"
+  },
+  "emotionMap": {
+    "happy": "assets/emotions/happy.webp",
+    "sad": "assets/emotions/sad.webp",
+    "love": "assets/emotions/love.webp",
+    "angry": "assets/emotions/angry.webp",
+    "thinking": "assets/emotions/thinking.webp",
+    "sleepy": "assets/emotions/sleepy.webp"
+  },
+  "defaultEmotion": "happy",
+  "features": {
+    "enableVoice": true,
+    "enableAutoRead": false,
+    "enableProactiveChat": true,
+    "enableEmotionImage": true,
+    "enableMemorySeed": true
+  }
+}

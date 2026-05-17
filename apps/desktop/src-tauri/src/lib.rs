@@ -37,6 +37,14 @@ struct Memory {
     timestamp: i64,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FsEntry {
+    name: String,
+    path: String,
+    is_dir: bool,
+}
+
 fn get_db_path(app: &AppHandle) -> PathBuf {
     let app_dir = app
         .path()
@@ -283,6 +291,54 @@ fn write_binary_file(path: String, data: Vec<u8>) -> Result<(), String> {
     }
     std::fs::write(&path, &data).map_err(|e| format!("Failed to write file: {}", e))?;
     log::info!("[RustFS] File written: {} ({} bytes)", path, data.len());
+    Ok(())
+}
+
+#[tauri::command]
+fn read_text_file(path: String) -> Result<String, String> {
+    log::info!("[RustFS] Reading text file: {}", path);
+    std::fs::read_to_string(&path).map_err(|e| format!("Failed to read text file: {}", e))
+}
+
+#[tauri::command]
+fn path_exists(path: String) -> Result<bool, String> {
+    Ok(std::path::Path::new(&path).exists())
+}
+
+#[tauri::command]
+fn create_dir_all(path: String) -> Result<(), String> {
+    std::fs::create_dir_all(&path).map_err(|e| format!("Failed to create directory: {}", e))
+}
+
+#[tauri::command]
+fn list_dir(path: String) -> Result<Vec<FsEntry>, String> {
+    let entries = std::fs::read_dir(&path).map_err(|e| format!("Failed to read directory: {}", e))?;
+    let mut result = Vec::new();
+
+    for entry in entries {
+        let entry = entry.map_err(|e| format!("Failed to read directory entry: {}", e))?;
+        let file_type = entry.file_type().map_err(|e| format!("Failed to read file type: {}", e))?;
+        result.push(FsEntry {
+            name: entry.file_name().to_string_lossy().to_string(),
+            path: entry.path().to_string_lossy().to_string(),
+            is_dir: file_type.is_dir(),
+        });
+    }
+
+    result.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    Ok(result)
+}
+
+#[tauri::command]
+fn open_path(path: String) -> Result<(), String> {
+    let target = std::path::Path::new(&path);
+    if !target.exists() {
+        return Err("Path does not exist".to_string());
+    }
+    Command::new("explorer")
+        .arg(target)
+        .spawn()
+        .map_err(|e| format!("Failed to open path: {}", e))?;
     Ok(())
 }
 
@@ -1467,6 +1523,11 @@ pub fn run() {
             read_photo_dir,
             read_file_base64,
             write_binary_file,
+            read_text_file,
+            path_exists,
+            create_dir_all,
+            list_dir,
+            open_path,
             capture_screen,
             hermes_status,
             hermes_start,
