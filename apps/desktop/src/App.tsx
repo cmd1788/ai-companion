@@ -60,7 +60,7 @@ export default function App() {
     if (!isLoading && dbReady) {
       restartProactiveChat();
     }
-  }, [styleSettings.enableAutoReply, styleSettings.autoReplySpeed, isLoading, dbReady]);
+  }, [styleSettings.enableAutoReply, isLoading, dbReady]);
 
   if (isLoading) {
     return (

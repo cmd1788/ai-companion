@@ -1,7 +1,7 @@
 // Runtime Adapter - 统一 Runtime API
 // 自动检测运行环境，选择 Tauri 或 Browser 实现
 
-import type { RuntimeMode, RuntimeStatus, Message, MemoryItem, EmotionState, RuntimeStateExport, InvokeResult, NetworkProvider, NetworkSearchResponse, NetworkStatus } from './runtimeTypes';
+import type { GenerateSpeechArgs, GenerateSpeechResponse, RuntimeMode, RuntimeStatus, Message, MemoryItem, EmotionState, RuntimeStateExport, InvokeResult, NetworkProvider, NetworkSearchResponse, NetworkStatus } from './runtimeTypes';
 import { isTauri as isTauriApi } from '@tauri-apps/api/core';
 import { tauriAdapter } from './tauriAdapter';
 import { browserAdapter } from './browserAdapter';
@@ -202,12 +202,70 @@ const screenAPI = {
   },
 };
 
+function bytesToBase64(bytes: number[]): string {
+  let binary = '';
+  const chunkSize = 0x8000;
+  for (let index = 0; index < bytes.length; index += chunkSize) {
+    const chunk = bytes.slice(index, index + chunkSize);
+    binary += String.fromCharCode(...chunk);
+  }
+  return btoa(binary);
+}
+
 // TTS API
 const ttsAPI = {
   speak: async (_text: string): Promise<{ ok: boolean; error?: string }> => {
     // TTS 在 Tauri 模式下由 mcpService 处理
     // Browser 模式下返回降级信息
-    return { ok: false, error: 'TTS via runtime (use mcpService.textToSpeech in Tauri mode)' };
+    return { ok: false, error: 'TTS via runtime.generate is required for MiniMax MCP audio output' };
+  },
+  generate: async (args: GenerateSpeechArgs): Promise<InvokeResult<GenerateSpeechResponse>> => {
+    if (isTauriRuntime()) {
+      return tauriAdapter.generateSpeech(args);
+    }
+    return {
+      ok: false,
+      error: '未检测到 Tauri 运行环境，无法调用 MiniMax TTS MCP。',
+      command: 'generate_speech',
+      degraded: true,
+    };
+  },
+  openFile: async (path: string): Promise<InvokeResult<void>> => {
+    if (isTauriRuntime()) {
+      return tauriAdapter.openAudioFile(path);
+    }
+    return { ok: false, error: '浏览器模式无法打开本地音频文件', command: 'open_audio_file', degraded: true };
+  },
+  clearCache: async (outputDir: string): Promise<InvokeResult<number>> => {
+    if (isTauriRuntime()) {
+      return tauriAdapter.clearAudioCache(outputDir);
+    }
+    return { ok: false, error: '浏览器模式无法清空本地音频缓存', command: 'clear_audio_cache', degraded: true };
+  },
+  fileInfo: async (path: string): Promise<InvokeResult<[boolean, number]>> => {
+    if (isTauriRuntime()) {
+      return tauriAdapter.getAudioFileInfo(path);
+    }
+    return { ok: false, error: '浏览器模式无法读取本地音频文件信息', command: 'get_audio_file_info', degraded: true };
+  },
+  fileDataUrl: async (path: string, format = 'mp3'): Promise<InvokeResult<string>> => {
+    if (isTauriRuntime()) {
+      const result = await tauriAdapter.readFileBase64(path);
+      if (result.ok && result.data) {
+        return {
+          ok: true,
+          data: `data:audio/${format};base64,${bytesToBase64(result.data)}`,
+          command: 'read_file_base64',
+        };
+      }
+      return {
+        ok: false,
+        error: result.error || 'Failed to read local audio file',
+        command: 'read_file_base64',
+        degraded: result.degraded,
+      };
+    }
+    return { ok: false, error: 'Browser mode cannot read local audio file', command: 'read_file_base64', degraded: true };
   },
 };
 

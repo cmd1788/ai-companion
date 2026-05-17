@@ -55,6 +55,36 @@ export interface TTSResult {
   degraded?: boolean;
 }
 
+export interface GenerateSpeechArgs {
+  text: string;
+  model: string;
+  voiceId: string;
+  speed: number;
+  vol: number;
+  pitch: number;
+  emotion: string;
+  format: string;
+  sampleRate: number;
+  bitrate: number;
+  channel: number;
+  outputDir: string;
+  apiKey?: string;
+  apiHost?: string;
+}
+
+export interface GenerateSpeechResponse {
+  ok: boolean;
+  provider: 'minimax_tts_mcp';
+  isMock: false;
+  tool: 'text_to_audio';
+  audioPath?: string;
+  fileExists: boolean;
+  fileSize: number;
+  durationMs: number;
+  errorCode?: string;
+  errorMessage?: string;
+}
+
 export interface RuntimeStateExport {
   mode: string;
   tauriAvailable: boolean;

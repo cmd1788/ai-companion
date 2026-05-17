@@ -1,6 +1,6 @@
 // Tauri Adapter - 真实 Tauri Runtime 实现
 import { invoke } from '@tauri-apps/api/core';
-import type { InvokeResult, NetworkSearchResponse } from './runtimeTypes';
+import type { GenerateSpeechArgs, GenerateSpeechResponse, InvokeResult, NetworkSearchResponse } from './runtimeTypes';
 
 export async function invokeSafe<T = any>(command: string, args?: Record<string, any>): Promise<InvokeResult<T>> {
   try {
@@ -123,6 +123,22 @@ export async function webSearch(query: string, apiKey?: string): Promise<InvokeR
   }
 }
 
+export async function generateSpeech(args: GenerateSpeechArgs): Promise<InvokeResult<GenerateSpeechResponse>> {
+  return invokeSafe<GenerateSpeechResponse>('generate_speech', args);
+}
+
+export async function openAudioFile(path: string): Promise<InvokeResult<void>> {
+  return invokeSafe<void>('open_audio_file', { path });
+}
+
+export async function clearAudioCache(outputDir: string): Promise<InvokeResult<number>> {
+  return invokeSafe<number>('clear_audio_cache', { outputDir });
+}
+
+export async function getAudioFileInfo(path: string): Promise<InvokeResult<[boolean, number]>> {
+  return invokeSafe<[boolean, number]>('get_audio_file_info', { path });
+}
+
 export const tauriAdapter = {
   invokeSafe,
   ping,
@@ -137,5 +153,9 @@ export const tauriAdapter = {
   readFileBase64,
   writeBinaryFile,
   webSearch,
+  generateSpeech,
+  openAudioFile,
+  clearAudioCache,
+  getAudioFileInfo,
   fetchUrl,
 };

@@ -5,6 +5,17 @@ import { onUserMessage } from './proactiveChat';
 import { runtime } from './runtime/runtimeAdapter';
 import { analyzeWebSearchTrigger } from './runtime/networkLog';
 import type { WebSearchMeta } from './store';
+import {
+  findVoiceRecordForText,
+  loadVoiceAudioRecords,
+  loadVoiceSettings,
+  maybeAutoRead,
+  openVoiceAudioFile,
+  playVoiceRecord,
+  speakText,
+  stopVoicePlayback,
+} from './voice';
+import type { VoiceAudioRecord } from './voice';
 
 const API_BASE = 'https://api.minimax.chat';
 const MODEL = 'MiniMax-M2.7-highspeed';
@@ -179,6 +190,9 @@ export function ChatPanel() {
   const [isAITyping, setIsAITyping] = useState(false);
   const [toast, setToast] = useState('');
   const [contextMenu, setContextMenu] = useState<MessageContextMenu | null>(null);
+  const [voiceRecords, setVoiceRecords] = useState<VoiceAudioRecord[]>(() => loadVoiceAudioRecords());
+  const [voiceBusyKey, setVoiceBusyKey] = useState<string | null>(null);
+  const [voiceSettings, setVoiceSettingsState] = useState(() => loadVoiceSettings());
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const lastWebSearchMetaRef = useRef<WebSearchMeta | null>(null);
   const { aiConfig, messages, addMessage, updateEmotionFromChat, memories, setCurrentExpression, networkSettings } = useAppStore();
@@ -191,7 +205,12 @@ export function ChatPanel() {
 
   useEffect(() => {
     scrollToBottom();
+    setVoiceRecords(loadVoiceAudioRecords());
   }, [messages]);
+
+  useEffect(() => {
+    setVoiceSettingsState(loadVoiceSettings());
+  }, []);
 
   useEffect(() => {
     if (!toast) return;
@@ -592,6 +611,83 @@ ${networkContext.results}
     }
   };
 
+  const copyTextToClipboard = async (text: string, okMessage: string) => {
+    try {
+      let copied = false;
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      textarea.style.position = 'fixed';
+      textarea.style.left = '-9999px';
+      textarea.style.top = '0';
+      textarea.setAttribute('readonly', 'true');
+      document.body.appendChild(textarea);
+      textarea.select();
+      copied = document.execCommand('copy');
+      document.body.removeChild(textarea);
+      if (!copied && navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+      }
+      setToast(okMessage);
+    } catch (error) {
+      console.error('[ChatPanel] Copy text failed:', error);
+      setToast('复制失败');
+    }
+  };
+
+  const getSelectedTextForMessage = (content: string): string => {
+    const selected = window.getSelection?.()?.toString()?.trim() || '';
+    if (selected && content.includes(selected)) return selected;
+    return content;
+  };
+
+  const refreshVoiceRecords = () => {
+    setVoiceSettingsState(loadVoiceSettings());
+    setVoiceRecords(loadVoiceAudioRecords());
+  };
+
+  const autoReadAssistantReply = (reply: string) => {
+    void maybeAutoRead(reply, 'assistant', `assistant_${Date.now()}`)
+      .then(refreshVoiceRecords)
+      .catch(error => console.warn('[ChatPanel] assistant auto read failed:', error));
+  };
+
+  const readMessageAloud = async (content: string, key: string) => {
+    const settings = loadVoiceSettings();
+    setVoiceSettingsState(settings);
+    if (!settings.enableRightClickRead) {
+      setToast('右键朗读未启用');
+      return;
+    }
+    const text = getSelectedTextForMessage(content);
+    setVoiceBusyKey(key);
+    setContextMenu(null);
+    try {
+      const result = await speakText(text, { source: 'manual', sourceMessageId: key, settings, play: true });
+      refreshVoiceRecords();
+      if (result.ok) {
+        setToast(result.textWasTruncated ? '文本过长，已截断朗读' : '开始朗读');
+      } else {
+        setToast(result.errorMessage || '语音生成失败');
+      }
+    } catch (error) {
+      console.error('[ChatPanel] Read message failed:', error);
+      refreshVoiceRecords();
+      setToast('音频已生成，但播放失败，可打开文件手动播放');
+    } finally {
+      setVoiceBusyKey(null);
+    }
+  };
+
+  const playAudioRecord = async (record: VoiceAudioRecord) => {
+    try {
+      await playVoiceRecord(record);
+      setToast('开始播放');
+    } catch (error) {
+      console.error('[ChatPanel] Audio playback failed:', error);
+      setToast('音频已生成，但播放失败，可打开文件手动播放');
+    }
+  };
+
   const openMessageMenu = (event: React.MouseEvent, content: string) => {
     event.preventDefault();
     event.stopPropagation();
@@ -638,6 +734,7 @@ ${networkContext.results}
       }
 
       await addMessage({ role: 'assistant', content: reply });
+      autoReadAssistantReply(reply);
       updateEmotionFromChat(cleanQuery, reply);
     } catch (error) {
       console.error('[ChatPanel] Manual web search failed:', error);
@@ -723,6 +820,7 @@ ${networkContext.results}
         await addMessage({ role: 'assistant', content: 'MODEL_API_KEY_MISSING' });
       } else {
         await addMessage({ role: 'assistant', content: reply });
+        autoReadAssistantReply(reply);
         // 更新情绪和记忆
         updateEmotionFromChat(userMessage, reply);
       }
@@ -791,6 +889,40 @@ ${networkContext.results}
         </div>
       )}
 
+      {contextMenu && (
+        <div
+          className="fixed z-[81] w-40 overflow-hidden rounded-xl text-sm"
+          onMouseDown={stopDragPropagation}
+          onClick={(event) => event.stopPropagation()}
+          style={{
+            left: contextMenu.x,
+            top: Math.min(contextMenu.y + 74, window.innerHeight - 96),
+            background: 'rgba(20,24,34,0.98)',
+            border: '1px solid rgba(255,255,255,0.12)',
+            boxShadow: '0 16px 40px rgba(0,0,0,0.38)',
+          }}
+        >
+          <button
+            className="w-full px-3 py-2 text-left hover:bg-white/10"
+            style={{ color: '#facc15' }}
+            onClick={() => readMessageAloud(contextMenu.content, `manual_${Date.now()}`)}
+          >
+            朗读这句话
+          </button>
+          <button
+            className="w-full px-3 py-2 text-left hover:bg-white/10"
+            style={{ color: '#fca5a5' }}
+            onClick={() => {
+              stopVoicePlayback();
+              setContextMenu(null);
+              setToast('已停止朗读');
+            }}
+          >
+            停止朗读
+          </button>
+        </div>
+      )}
+
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
         {messages.length === 0 && (
           <div className="text-center text-sm" style={{ color: '#a0a0a0' }}>
@@ -832,6 +964,10 @@ ${networkContext.results}
             );
           }
           
+          const messageKey = `chat_${index}_${msg.role}`;
+          const voiceRecord = findVoiceRecordForText(msg.content, voiceSettings, voiceRecords);
+          const isVoiceBusy = voiceBusyKey === messageKey;
+
           return (
             <div
               key={index}
@@ -848,6 +984,58 @@ ${networkContext.results}
                 }}
               >
                 <div>{msg.content}</div>
+                {voiceRecord && (
+                  <div className="mt-2 flex items-center gap-1.5 flex-wrap text-[11px]">
+                    <button
+                      className="px-2 py-1 rounded-md hover:opacity-80"
+                      onMouseDown={stopDragPropagation}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        playAudioRecord(voiceRecord);
+                      }}
+                      style={{ background: 'rgba(250,204,21,0.18)', color: '#facc15' }}
+                    >
+                      播放
+                    </button>
+                    <button
+                      className="px-2 py-1 rounded-md hover:opacity-80"
+                      onMouseDown={stopDragPropagation}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        stopVoicePlayback();
+                        setToast('已停止朗读');
+                      }}
+                      style={{ background: 'rgba(248,113,113,0.16)', color: '#fca5a5' }}
+                    >
+                      停止
+                    </button>
+                    <button
+                      className="px-2 py-1 rounded-md hover:opacity-80"
+                      onMouseDown={stopDragPropagation}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        openVoiceAudioFile(voiceRecord).then(ok => setToast(ok ? '已打开音频文件' : '打开音频失败'));
+                      }}
+                      style={{ background: 'rgba(59,130,246,0.18)', color: '#93c5fd' }}
+                    >
+                      打开文件
+                    </button>
+                    <button
+                      className="px-2 py-1 rounded-md hover:opacity-80"
+                      onMouseDown={stopDragPropagation}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        copyTextToClipboard(voiceRecord.filePath, '已复制音频路径');
+                      }}
+                      style={{ background: 'rgba(148,163,184,0.16)', color: '#cbd5e1' }}
+                    >
+                      复制路径
+                    </button>
+                  </div>
+                )}
+                {!voiceRecord && isVoiceBusy && (
+                  <div className="mt-2 text-[11px]" style={{ color: '#facc15' }}>正在生成语音...</div>
+                )}
                 <button
                   className={`absolute -top-8 ${msg.role === 'user' ? 'right-0' : 'left-0'} hidden px-2 py-1 rounded-md text-[11px] group-hover:block hover:bg-white/10`}
                   onMouseDown={stopDragPropagation}

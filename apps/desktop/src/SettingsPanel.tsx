@@ -1,13 +1,47 @@
 import React, { useState, useEffect } from 'react';
 import { useAppStore } from './store';
-import { createScheduledTask, deleteScheduledTask, updateScheduledTask, toggleScheduledTask, loadScheduledTasks } from './scheduledTask';
+import {
+  createScheduledTask,
+  deleteScheduledTask,
+  updateScheduledTask,
+  toggleScheduledTask,
+  loadScheduledTasks,
+  classifyScheduledTaskAction,
+  getScheduledTaskActionLabel,
+  mayTriggerScheduledWebSearch,
+} from './scheduledTask';
 import type { ScheduledTask, ScheduledTaskType } from './store';
+import {
+  createDefaultInterestTopic,
+  loadProactiveChatSettings,
+  loadProactiveTriggerRecords,
+  restartProactiveChat,
+  runProactiveChatTest,
+  saveProactiveChatSettings,
+  TONE_PRESET_OPTIONS,
+} from './proactiveChat';
+import type { ProactiveChatSettings, ProactiveInterestTopic } from './proactiveChat';
+import {
+  clearVoiceCache,
+  DEFAULT_AUDIO_CACHE_DIR,
+  loadVoiceAudioRecords,
+  loadVoiceSettings,
+  openVoiceAudioFile,
+  playVoiceRecord,
+  saveVoiceSettings,
+  speakText,
+  stopVoicePlayback,
+  VOICE_EMOTION_OPTIONS,
+  VOICE_MODEL_OPTIONS,
+  VOICE_PRESET_OPTIONS,
+} from './voice';
+import type { VoiceAudioRecord, VoiceSettings } from './voice';
 
 interface SettingsPanelProps {
   onClose?: () => void;
 }
 
-type SettingsTab = 'character' | 'memory' | 'system' | 'model' | 'network' | 'style' | 'scheduler';
+type SettingsTab = 'character' | 'memory' | 'system' | 'model' | 'network' | 'style' | 'voice' | 'proactive' | 'scheduler';
 
 export function SettingsPanel({ onClose }: SettingsPanelProps) {
   const [activeTab, setActiveTab] = useState<SettingsTab>('character');
@@ -79,6 +113,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
     { key: 'model' as const, label: '🤖 模型设置', icon: '🤖', color: '#22c55e', desc: 'API配置、连接测试' },
     { key: 'network' as const, label: '🌐 联网中心', icon: '🌐', color: '#06b6d4', desc: 'API Key、联网搜索、图片生成' },
     { key: 'style' as const, label: '🎨 风格页面', icon: '🎨', color: '#f59e0b', desc: '界面显示、功能开关' },
+    { key: 'proactive' as const, label: '💡 主动聊天中心', icon: '💡', color: '#38bdf8', desc: '人设、话题、触发、联网资讯' },
     { key: 'scheduler' as const, label: '⏰ 定时任务', icon: '⏰', color: '#f97316', desc: '定时提醒、周期任务' },
   ];
 
@@ -194,6 +229,24 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
               </div>
             </button>
           ))}
+          <button
+            onClick={() => setActiveTab('voice')}
+            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left transition-all"
+            style={{
+              background: activeTab === 'voice'
+                ? 'linear-gradient(90deg, rgba(250,204,21,0.22), rgba(250,204,21,0.08))'
+                : 'transparent',
+              borderLeft: activeTab === 'voice' ? '3px solid #facc15' : '3px solid transparent',
+            }}
+          >
+            <span className="text-xl">🎧</span>
+            <div>
+              <div className="text-sm font-medium" style={{ color: activeTab === 'voice' ? '#facc15' : '#888' }}>
+                语音设置
+              </div>
+              <div className="text-xs" style={{ color: '#555' }}>MiniMax TTS、声音和自动朗读</div>
+            </div>
+          </button>
         </nav>
 
         {/* 关闭按钮 */}
@@ -220,10 +273,10 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
         >
           <div>
             <h2 className="text-xl font-bold" style={{ color: '#fff' }}>
-              {tabs.find(t => t.key === activeTab)?.label}
+              {activeTab === 'voice' ? '🎧 语音设置' : tabs.find(t => t.key === activeTab)?.label}
             </h2>
             <p className="text-sm mt-0.5" style={{ color: '#666' }}>
-              {tabs.find(t => t.key === activeTab)?.desc}
+              {activeTab === 'voice' ? 'MiniMax TTS、声音、朗读行为和缓存' : tabs.find(t => t.key === activeTab)?.desc}
             </p>
           </div>
           <button
@@ -1374,6 +1427,19 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
             </div>
           )}
 
+          {/* ========== 主动聊天中心 ========== */}
+          {activeTab === 'voice' && (
+            <div className="max-w-4xl space-y-6">
+              <VoiceSettingsPanel />
+            </div>
+          )}
+
+          {activeTab === 'proactive' && (
+            <div className="max-w-4xl space-y-6">
+              <ProactiveChatCenter />
+            </div>
+          )}
+
           {/* ========== 定时任务 ========== */}
           {activeTab === 'scheduler' && (
             <div className="max-w-3xl space-y-6">
@@ -1381,6 +1447,814 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
             </div>
           )}
         </div>
+      </div>
+    </div>
+  );
+}
+
+type ContentTypeKey = keyof ProactiveChatSettings['enabledContentTypes'];
+
+function ToggleSwitch({ checked, onClick, color = '#38bdf8' }: {
+  checked: boolean;
+  onClick: () => void;
+  color?: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="w-14 h-8 rounded-full transition-all relative flex-shrink-0"
+      style={{ background: checked ? color : 'rgba(255,255,255,0.2)' }}
+    >
+      <div
+        className="w-6 h-6 rounded-full absolute top-1 transition-all"
+        style={{ background: '#fff', left: checked ? '30px' : '4px' }}
+      />
+    </button>
+  );
+}
+
+function splitKeywords(value: string): string[] {
+  return value
+    .split(/[,，、\n]/)
+    .map(item => item.trim())
+    .filter(Boolean);
+}
+
+function formatRecordTime(iso: string): string {
+  try {
+    return new Date(iso).toLocaleString('zh-CN', {
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  } catch {
+    return iso;
+  }
+}
+
+function VoiceSettingsPanel() {
+  const { aiConfig, styleSettings, setStyleSettings } = useAppStore();
+  const [settings, setSettings] = useState<VoiceSettings>(() => loadVoiceSettings());
+  const [records, setRecords] = useState<VoiceAudioRecord[]>(() => loadVoiceAudioRecords());
+  const [testState, setTestState] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
+  const [testMessage, setTestMessage] = useState('');
+
+  const color = '#facc15';
+  const cardStyle: React.CSSProperties = {
+    background: 'rgba(250,204,21,0.08)',
+    border: '1px solid rgba(250,204,21,0.22)',
+  };
+  const inputStyle: React.CSSProperties = {
+    background: 'rgba(0,0,0,0.26)',
+    border: '1px solid rgba(255,255,255,0.12)',
+    color: '#fff',
+    outline: 'none',
+  };
+
+  const persistSettings = (nextSettings: VoiceSettings) => {
+    const saved = saveVoiceSettings(nextSettings);
+    setSettings(saved);
+    setStyleSettings({ ...styleSettings, enableTTS: saved.enabled });
+    return saved;
+  };
+
+  const patchSettings = (patch: Partial<VoiceSettings>) => {
+    return persistSettings({ ...settings, ...patch });
+  };
+
+  const refreshRecords = () => setRecords(loadVoiceAudioRecords());
+
+  const runVoiceTest = async () => {
+    setTestState('testing');
+    setTestMessage('');
+    try {
+      const result = await speakText('小伊在这里，语音测试成功啦。今天我会用这个声音陪你说话。', {
+        source: 'test',
+        sourceMessageId: 'voice_test',
+        settings,
+        play: true,
+      });
+      refreshRecords();
+      setTestState(result.ok ? 'success' : 'error');
+      if (result.ok) {
+        setTestMessage([
+          '测试听一句通过',
+          `provider=${result.response?.provider || 'minimax_tts_mcp'}`,
+          `tool=${result.response?.tool || 'text_to_audio'}`,
+          `isMock=${String(result.response?.isMock ?? false)}`,
+          `fileExists=${String(result.response?.fileExists ?? true)}`,
+          `fileSize=${result.response?.fileSize || result.record?.fileSize || 0}`,
+          `audioPath=${result.record?.filePath || result.response?.audioPath || ''}`,
+        ].join('\n'));
+      } else {
+        setTestMessage([
+          result.errorMessage || '语音生成失败，请稍后再试。',
+          `errorCode=${result.errorCode || 'MINIMAX_TTS_GENERATION_FAILED'}`,
+          'provider=minimax_tts_mcp',
+          'tool=text_to_audio',
+          'isMock=false',
+        ].join('\n'));
+      }
+    } catch (error) {
+      refreshRecords();
+      setTestState('error');
+      setTestMessage(error instanceof Error ? error.message : String(error));
+    }
+  };
+
+  const clearCache = async () => {
+    try {
+      const removed = await clearVoiceCache();
+      refreshRecords();
+      setTestState('success');
+      setTestMessage(`已清空语音缓存，删除 ${removed} 个文件。`);
+    } catch (error) {
+      setTestState('error');
+      setTestMessage(error instanceof Error ? error.message : String(error));
+    }
+  };
+
+  const renderSwitchRow = (
+    label: string,
+    desc: string,
+    checked: boolean,
+    onClick: () => void,
+  ) => (
+    <div className="flex items-center justify-between gap-4 p-4 rounded-xl" style={{ background: 'rgba(255,255,255,0.05)' }}>
+      <div>
+        <div className="text-sm font-medium" style={{ color: '#fff' }}>{label}</div>
+        <div className="text-xs mt-1" style={{ color: '#8aa3b5' }}>{desc}</div>
+      </div>
+      <ToggleSwitch checked={checked} onClick={onClick} color={color} />
+    </div>
+  );
+
+  return (
+    <div className="space-y-6">
+      <div className="p-6 rounded-2xl" style={cardStyle}>
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <h3 className="text-base font-semibold" style={{ color }}>语音功能总开关</h3>
+            <p className="text-xs mt-1" style={{ color: '#8aa3b5' }}>
+              当前 MiniMax Key 状态：{aiConfig.apiKey ? '已配置' : '未配置'}；Key 来源：联网中心
+            </p>
+          </div>
+          <ToggleSwitch
+            checked={settings.enabled}
+            onClick={() => patchSettings({ enabled: !settings.enabled })}
+            color={color}
+          />
+        </div>
+      </div>
+
+      <div className="p-6 rounded-2xl space-y-4" style={cardStyle}>
+        <h3 className="text-base font-semibold" style={{ color }}>声音选择</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-xs mb-2" style={{ color: '#8aa3b5' }}>语音模型</label>
+            <select
+              value={settings.model}
+              onChange={event => patchSettings({ model: event.target.value as VoiceSettings['model'] })}
+              className="w-full px-4 py-3 rounded-xl text-sm"
+              style={inputStyle}
+            >
+              {VOICE_MODEL_OPTIONS.map(option => (
+                <option key={option.value} value={option.value}>
+                  {option.label}{option.desc ? `（${option.desc}）` : ''}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs mb-2" style={{ color: '#8aa3b5' }}>系统预设声音 voiceId</label>
+            <select
+              value={settings.voiceId}
+              onChange={event => patchSettings({ voiceId: event.target.value })}
+              className="w-full px-4 py-3 rounded-xl text-sm"
+              style={inputStyle}
+            >
+              {VOICE_PRESET_OPTIONS.map(option => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+        <div>
+          <label className="block text-xs mb-2" style={{ color: '#8aa3b5' }}>扩展 voiceId 接头</label>
+          <input
+            value={settings.voiceId}
+            onChange={event => patchSettings({ voiceId: event.target.value })}
+            placeholder="输入 MiniMax 可用的 voiceId"
+            className="w-full px-4 py-3 rounded-xl text-sm"
+            style={inputStyle}
+          />
+        </div>
+      </div>
+
+      <div className="p-6 rounded-2xl space-y-4" style={cardStyle}>
+        <h3 className="text-base font-semibold" style={{ color }}>朗读行为</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {renderSwitchRow('自动朗读 AI 回复', 'AI 文字先显示，语音异步生成播放', settings.autoReadAssistantReply, () => patchSettings({ autoReadAssistantReply: !settings.autoReadAssistantReply }))}
+          {renderSwitchRow('自动朗读主动聊天', '主动聊天消息生成后自动朗读', settings.autoReadProactive, () => patchSettings({ autoReadProactive: !settings.autoReadProactive }))}
+          {renderSwitchRow('自动朗读定时任务', '定时提醒、总结和搜索结论可朗读', settings.autoReadScheduledTask, () => patchSettings({ autoReadScheduledTask: !settings.autoReadScheduledTask }))}
+          {renderSwitchRow('启用右键朗读', '聊天消息右键可选择朗读这句话', settings.enableRightClickRead, () => patchSettings({ enableRightClickRead: !settings.enableRightClickRead }))}
+          {renderSwitchRow('清洗朗读文本', '移除 Markdown、代码块、调试字段和来源链接', settings.cleanTextBeforeRead, () => patchSettings({ cleanTextBeforeRead: !settings.cleanTextBeforeRead }))}
+          {renderSwitchRow('跳过链接', '联网搜索结果不朗读完整 URL', settings.skipLinks, () => patchSettings({ skipLinks: !settings.skipLinks }))}
+        </div>
+      </div>
+
+      <div className="p-6 rounded-2xl space-y-4" style={cardStyle}>
+        <h3 className="text-base font-semibold" style={{ color }}>音频参数</h3>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div>
+            <label className="block text-xs mb-2" style={{ color: '#8aa3b5' }}>emotion</label>
+            <select
+              value={settings.emotion}
+              onChange={event => patchSettings({ emotion: event.target.value as VoiceSettings['emotion'] })}
+              className="w-full px-4 py-3 rounded-xl text-sm"
+              style={inputStyle}
+            >
+              {VOICE_EMOTION_OPTIONS.map(value => <option key={value} value={value}>{value}</option>)}
+            </select>
+          </div>
+          {([
+            ['speed', 'speed', 0.5, 2, 0.05],
+            ['vol', 'vol', 0.1, 3, 0.1],
+            ['pitch', 'pitch', -12, 12, 0.5],
+          ] as const).map(([key, label, min, max, step]) => (
+            <div key={key}>
+              <label className="block text-xs mb-2" style={{ color: '#8aa3b5' }}>{label}: {settings[key]}</label>
+              <input
+                type="range"
+                min={min}
+                max={max}
+                step={step}
+                value={settings[key]}
+                onChange={event => patchSettings({ [key]: Number(event.target.value) } as Partial<VoiceSettings>)}
+                className="w-full"
+              />
+            </div>
+          ))}
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+          {[
+            ['format', settings.format],
+            ['sampleRate', settings.sampleRate],
+            ['bitrate', settings.bitrate],
+            ['channel', settings.channel],
+          ].map(([label, value]) => (
+            <div key={label} className="p-3 rounded-xl" style={{ background: 'rgba(0,0,0,0.22)' }}>
+              <div style={{ color: '#8aa3b5' }}>{label}</div>
+              <div className="mt-1 font-mono" style={{ color: '#fff' }}>{value}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="p-6 rounded-2xl space-y-4" style={cardStyle}>
+        <h3 className="text-base font-semibold" style={{ color }}>缓存设置</h3>
+        {renderSwitchRow('启用缓存', '相同文本和相同声音参数复用本地 mp3', settings.cacheEnabled, () => patchSettings({ cacheEnabled: !settings.cacheEnabled }))}
+        <div className="grid grid-cols-1 md:grid-cols-[1fr_160px] gap-4">
+          <div>
+            <label className="block text-xs mb-2" style={{ color: '#8aa3b5' }}>缓存目录</label>
+            <input
+              value={settings.cacheDir || DEFAULT_AUDIO_CACHE_DIR}
+              onChange={event => patchSettings({ cacheDir: event.target.value })}
+              className="w-full px-4 py-3 rounded-xl text-sm font-mono"
+              style={inputStyle}
+            />
+          </div>
+          <div>
+            <label className="block text-xs mb-2" style={{ color: '#8aa3b5' }}>最大缓存记录</label>
+            <input
+              type="number"
+              min={10}
+              value={settings.maxCacheFiles}
+              onChange={event => patchSettings({ maxCacheFiles: Math.max(10, Number(event.target.value) || 80) })}
+              className="w-full px-4 py-3 rounded-xl text-sm"
+              style={inputStyle}
+            />
+          </div>
+        </div>
+        <button
+          onClick={clearCache}
+          className="px-4 py-2 rounded-xl text-sm font-medium"
+          style={{ background: 'rgba(239,68,68,0.16)', color: '#fca5a5', border: '1px solid rgba(239,68,68,0.28)' }}
+        >
+          清空语音缓存
+        </button>
+      </div>
+
+      <div className="p-6 rounded-2xl space-y-4" style={cardStyle}>
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <h3 className="text-base font-semibold" style={{ color }}>测试听一句</h3>
+            <p className="text-xs mt-1" style={{ color: '#8aa3b5' }}>优先调用 MiniMax MCP text_to_audio；Token Plan 可回退到 mmx CLI，生成 mp3 到 audio_cache 并播放</p>
+          </div>
+          <button
+            onClick={runVoiceTest}
+            disabled={testState === 'testing'}
+            className="px-5 py-3 rounded-xl text-sm font-semibold disabled:opacity-60"
+            style={{ background: 'linear-gradient(135deg, #facc15, #fb923c)', color: '#1a1a2e' }}
+          >
+            {testState === 'testing' ? '生成中...' : '测试听一句'}
+          </button>
+        </div>
+        {testMessage && (
+          <pre className="p-4 rounded-xl text-xs whitespace-pre-wrap" style={{ background: 'rgba(0,0,0,0.28)', color: testState === 'error' ? '#fca5a5' : '#d9f99d' }}>
+            {testMessage}
+          </pre>
+        )}
+      </div>
+
+      <div className="p-6 rounded-2xl space-y-4" style={cardStyle}>
+        <div className="flex items-center justify-between">
+          <h3 className="text-base font-semibold" style={{ color }}>最近语音记录</h3>
+          <span className="text-xs" style={{ color: '#8aa3b5' }}>{records.length} 条</span>
+        </div>
+        {records.length === 0 ? (
+          <div className="p-5 rounded-xl text-sm text-center" style={{ background: 'rgba(0,0,0,0.2)', color: '#8aa3b5' }}>
+            暂无语音记录
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {records.slice(0, 20).map(record => (
+              <div key={record.id} className="p-4 rounded-xl" style={{ background: 'rgba(0,0,0,0.22)', border: '1px solid rgba(255,255,255,0.08)' }}>
+                <div className="flex items-center justify-between gap-3 mb-2">
+                  <div className="text-sm truncate" style={{ color: '#fff' }}>{record.textPreview}</div>
+                  <span className="text-xs flex-shrink-0" style={{ color: '#8aa3b5' }}>{formatRecordTime(record.createdAt)}</span>
+                </div>
+                <div className="text-xs font-mono break-all" style={{ color: '#8aa3b5' }}>{record.filePath}</div>
+                <div className="mt-3 flex items-center gap-2 flex-wrap text-xs">
+                  <span style={{ color: '#facc15' }}>{record.model}</span>
+                  <span style={{ color: '#facc15' }}>{record.voiceId}</span>
+                  <span style={{ color: '#8aa3b5' }}>{record.fileSize || 0} bytes</span>
+                  <button onClick={() => playVoiceRecord(record)} className="px-3 py-1 rounded-lg" style={{ background: 'rgba(250,204,21,0.18)', color }}>播放</button>
+                  <button onClick={() => stopVoicePlayback()} className="px-3 py-1 rounded-lg" style={{ background: 'rgba(248,113,113,0.16)', color: '#fca5a5' }}>停止</button>
+                  <button onClick={() => openVoiceAudioFile(record)} className="px-3 py-1 rounded-lg" style={{ background: 'rgba(59,130,246,0.16)', color: '#93c5fd' }}>打开文件</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ProactiveChatCenter() {
+  const { styleSettings, setStyleSettings } = useAppStore();
+  const [settings, setSettings] = useState<ProactiveChatSettings>(() => loadProactiveChatSettings());
+  const [records, setRecords] = useState(() => loadProactiveTriggerRecords());
+  const [testState, setTestState] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
+  const [testMessage, setTestMessage] = useState('');
+
+  const color = '#38bdf8';
+  const cardStyle: React.CSSProperties = {
+    background: 'rgba(56,189,248,0.08)',
+    border: '1px solid rgba(56,189,248,0.22)',
+  };
+  const inputStyle: React.CSSProperties = {
+    background: 'rgba(0,0,0,0.26)',
+    border: '1px solid rgba(255,255,255,0.12)',
+    color: '#fff',
+    outline: 'none',
+  };
+
+  const persistSettings = (nextSettings: ProactiveChatSettings) => {
+    const saved = saveProactiveChatSettings(nextSettings);
+    setSettings(saved);
+    restartProactiveChat();
+    return saved;
+  };
+
+  const patchSettings = (patch: Partial<ProactiveChatSettings>) => {
+    return persistSettings({ ...settings, ...patch });
+  };
+
+  const updateContentType = (key: ContentTypeKey) => {
+    patchSettings({
+      enabledContentTypes: {
+        ...settings.enabledContentTypes,
+        [key]: !settings.enabledContentTypes[key],
+      },
+    });
+  };
+
+  const updateTopic = (id: string, patch: Partial<ProactiveInterestTopic>) => {
+    patchSettings({
+      interestTopics: settings.interestTopics.map(topic =>
+        topic.id === id ? { ...topic, ...patch } : topic
+      ),
+    });
+  };
+
+  const addTopic = () => {
+    patchSettings({ interestTopics: [...settings.interestTopics, createDefaultInterestTopic()] });
+  };
+
+  const removeTopic = (id: string) => {
+    const nextTopics = settings.interestTopics.filter(topic => topic.id !== id);
+    patchSettings({ interestTopics: nextTopics.length ? nextTopics : [createDefaultInterestTopic()] });
+  };
+
+  const runImmediateTest = async () => {
+    setTestState('testing');
+    setTestMessage('');
+    try {
+      const result = await runProactiveChatTest();
+      setSettings(loadProactiveChatSettings());
+      setRecords(loadProactiveTriggerRecords());
+      setTestState(result.success ? 'success' : 'error');
+      setTestMessage(result.message || result.record.error || '主动聊天测试没有生成消息');
+    } catch (error) {
+      setTestState('error');
+      setTestMessage(error instanceof Error ? error.message : String(error));
+      setRecords(loadProactiveTriggerRecords());
+    }
+  };
+
+  const contentTypes: Array<{ key: ContentTypeKey; label: string; desc: string }> = [
+    { key: 'care', label: '关心问候', desc: '喝水、休息、作息、工作太久提醒' },
+    { key: 'projectReminder', label: '项目进度提醒', desc: '结合最近项目、构建、测试、修复上下文' },
+    { key: 'interestNews', label: '兴趣资讯搜索', desc: '按兴趣关键词主动联网搜索资讯' },
+    { key: 'dailySummary', label: '每日总结', desc: '围绕今天的聊天和任务做复盘' },
+    { key: 'studyReminder', label: '学习监督', desc: '学习计划、复习和执行提醒' },
+    { key: 'customMessage', label: '自定义话术', desc: '优先使用你写好的主动话术' },
+  ];
+
+  return (
+    <div className="space-y-6">
+      <div className="p-6 rounded-2xl" style={cardStyle}>
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <h3 className="text-base font-semibold" style={{ color }}>主动聊天总开关</h3>
+            <p className="text-xs mt-1" style={{ color: '#8aa3b5' }}>
+              当前下次触发：{settings.nextRunAt ? new Date(settings.nextRunAt).toLocaleString('zh-CN') : '待计算'}
+            </p>
+          </div>
+          <ToggleSwitch
+            checked={settings.enabled && styleSettings.enableAutoReply}
+            color={color}
+            onClick={() => {
+              const nextEnabled = !(settings.enabled && styleSettings.enableAutoReply);
+              patchSettings({ enabled: nextEnabled });
+              setStyleSettings({ ...styleSettings, enableAutoReply: nextEnabled });
+            }}
+          />
+        </div>
+      </div>
+
+      <div className="p-6 rounded-2xl space-y-5" style={cardStyle}>
+        <h3 className="text-base font-semibold" style={{ color }}>主动聊天人设与话题设定</h3>
+
+        <div>
+          <label className="block text-xs mb-2" style={{ color: '#8aa3b5' }}>人设设定</label>
+          <textarea
+            value={settings.personaPrompt}
+            onChange={event => patchSettings({ personaPrompt: event.target.value })}
+            rows={6}
+            className="w-full px-4 py-3 rounded-xl text-sm resize-none"
+            style={inputStyle}
+            placeholder={'你是一个温柔、细心、略微撒娇的小伊。\n主动说话时要像陪伴型桌宠，不要像工作报告。\n你可以关心我是否休息、是否喝水、是否继续推进项目。'}
+          />
+        </div>
+
+        <div>
+          <label className="block text-xs mb-2" style={{ color: '#8aa3b5' }}>主动话题范围</label>
+          <textarea
+            value={settings.topicScope}
+            onChange={event => patchSettings({ topicScope: event.target.value })}
+            rows={6}
+            className="w-full px-4 py-3 rounded-xl text-sm resize-none"
+            style={inputStyle}
+            placeholder={'可以主动聊：\n- AI Companion 开发进度\n- 视频集锦项目\n- 喝水、休息、作息提醒\n\n不要主动聊：\n- 无关娱乐八卦\n- 假装知道我正在做什么'}
+          />
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-xs mb-2" style={{ color: '#8aa3b5' }}>语气风格</label>
+            <select
+              value={settings.tonePreset}
+              onChange={event => patchSettings({ tonePreset: event.target.value as ProactiveChatSettings['tonePreset'] })}
+              className="w-full px-4 py-3 rounded-xl text-sm"
+              style={inputStyle}
+            >
+              {TONE_PRESET_OPTIONS.map(option => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </select>
+          </div>
+          {settings.tonePreset === 'custom' && (
+            <div>
+              <label className="block text-xs mb-2" style={{ color: '#8aa3b5' }}>自定义语气</label>
+              <textarea
+                value={settings.customTone}
+                onChange={event => patchSettings({ customTone: event.target.value })}
+                rows={3}
+                className="w-full px-4 py-3 rounded-xl text-sm resize-none"
+                style={inputStyle}
+                placeholder="语气像小伊，温柔、有点可爱，但不要太吵。先说重点，再轻轻提醒。"
+              />
+            </div>
+          )}
+        </div>
+
+        <div>
+          <label className="block text-xs mb-2" style={{ color: '#8aa3b5' }}>禁忌内容</label>
+          <textarea
+            value={settings.forbiddenTopics}
+            onChange={event => patchSettings({ forbiddenTopics: event.target.value })}
+            rows={5}
+            className="w-full px-4 py-3 rounded-xl text-sm resize-none"
+            style={inputStyle}
+            placeholder={'不要中英混杂。\n不要输出英文推理。\n不要说 Here is / Sure / Let me / I can help。\n不要编造我没有说过的信息。'}
+          />
+        </div>
+      </div>
+
+      <div className="p-6 rounded-2xl space-y-4" style={cardStyle}>
+        <h3 className="text-base font-semibold" style={{ color }}>主动内容类型</h3>
+        <div className="grid grid-cols-2 gap-3">
+          {contentTypes.map(item => (
+            <div key={item.key} className="flex items-center justify-between gap-3 p-4 rounded-xl" style={{ background: 'rgba(255,255,255,0.05)' }}>
+              <div>
+                <div className="text-sm font-medium" style={{ color: '#fff' }}>{item.label}</div>
+                <div className="text-xs mt-1" style={{ color: '#6b8292' }}>{item.desc}</div>
+              </div>
+              <ToggleSwitch checked={settings.enabledContentTypes[item.key]} onClick={() => updateContentType(item.key)} color={color} />
+            </div>
+          ))}
+        </div>
+        {settings.enabledContentTypes.customMessage && (
+          <textarea
+            value={settings.customMessagePrompt}
+            onChange={event => patchSettings({ customMessagePrompt: event.target.value })}
+            rows={3}
+            className="w-full px-4 py-3 rounded-xl text-sm resize-none"
+            style={inputStyle}
+            placeholder="写一段小伊可以主动发送的自定义话术。"
+          />
+        )}
+      </div>
+
+      <div className="p-6 rounded-2xl space-y-5" style={cardStyle}>
+        <div className="flex items-center justify-between">
+          <h3 className="text-base font-semibold" style={{ color }}>兴趣资讯订阅</h3>
+          <button
+            onClick={addTopic}
+            className="px-3 py-2 rounded-xl text-sm font-medium"
+            style={{ background: 'rgba(56,189,248,0.2)', color }}
+          >
+            + 添加主题
+          </button>
+        </div>
+
+        <div>
+          <label className="block text-xs mb-2" style={{ color: '#8aa3b5' }}>兴趣关键词配置</label>
+          <textarea
+            value={settings.interestKeywords.join(', ')}
+            onChange={event => patchSettings({ interestKeywords: splitKeywords(event.target.value) })}
+            rows={2}
+            className="w-full px-4 py-3 rounded-xl text-sm resize-none"
+            style={inputStyle}
+            placeholder="MiniMax, OpenClaw, Codex, MCP"
+          />
+        </div>
+
+        {settings.interestTopics.map(topic => (
+          <div key={topic.id} className="p-4 rounded-xl space-y-4" style={{ background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.08)' }}>
+            <div className="flex items-center justify-between gap-3">
+              <input
+                value={topic.name}
+                onChange={event => updateTopic(topic.id, { name: event.target.value })}
+                className="flex-1 px-4 py-3 rounded-xl text-sm font-medium"
+                style={inputStyle}
+                placeholder="主题名称：AI 工具更新"
+              />
+              <ToggleSwitch checked={topic.enabled} onClick={() => updateTopic(topic.id, { enabled: !topic.enabled })} color={color} />
+              <button
+                onClick={() => removeTopic(topic.id)}
+                className="w-9 h-9 rounded-lg text-lg"
+                style={{ background: 'rgba(239,68,68,0.18)', color: '#ef4444' }}
+              >
+                ×
+              </button>
+            </div>
+            <textarea
+              value={topic.keywords.join(', ')}
+              onChange={event => updateTopic(topic.id, { keywords: splitKeywords(event.target.value) })}
+              rows={2}
+              className="w-full px-4 py-3 rounded-xl text-sm resize-none"
+              style={inputStyle}
+              placeholder="关键词：MiniMax, OpenClaw, Codex, MCP"
+            />
+            <div className="grid grid-cols-2 gap-4">
+              <input
+                value={topic.frequency}
+                onChange={event => updateTopic(topic.id, { frequency: event.target.value })}
+                className="px-4 py-3 rounded-xl text-sm"
+                style={inputStyle}
+                placeholder="频率：每天 09:00"
+              />
+              <input
+                type="number"
+                min={1}
+                max={10}
+                value={topic.maxResults}
+                onChange={event => updateTopic(topic.id, { maxResults: Math.max(1, Math.min(10, Number(event.target.value) || 5)) })}
+                className="px-4 py-3 rounded-xl text-sm"
+                style={inputStyle}
+                placeholder="搜索结果数量"
+              />
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="p-6 rounded-2xl space-y-5" style={cardStyle}>
+        <h3 className="text-base font-semibold" style={{ color }}>触发规则</h3>
+        <div className="grid grid-cols-4 gap-3">
+          {([
+            { value: 'interval', label: '间隔触发' },
+            { value: 'fixed_time', label: '固定时间' },
+            { value: 'idle', label: '空闲触发' },
+            { value: 'context', label: '上下文触发' },
+          ] as const).map(option => (
+            <button
+              key={option.value}
+              onClick={() => patchSettings({ triggerType: option.value, nextRunAt: undefined })}
+              className="px-3 py-3 rounded-xl text-sm"
+              style={{
+                background: settings.triggerType === option.value ? 'rgba(56,189,248,0.24)' : 'rgba(255,255,255,0.06)',
+                border: `1px solid ${settings.triggerType === option.value ? color : 'rgba(255,255,255,0.1)'}`,
+                color: settings.triggerType === option.value ? color : '#9aa8b2',
+              }}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+        {(settings.triggerType === 'idle' || settings.triggerType === 'context') && (
+          <div className="text-xs" style={{ color: '#f59e0b' }}>该触发方式已预留，第一版不会自动触发。</div>
+        )}
+        <div className="grid grid-cols-2 gap-4">
+          {settings.triggerType === 'fixed_time' && (
+            <div>
+              <label className="block text-xs mb-2" style={{ color: '#8aa3b5' }}>固定时间</label>
+              <input
+                type="time"
+                value={settings.timeOfDay || '09:00'}
+                onChange={event => patchSettings({ timeOfDay: event.target.value, nextRunAt: undefined })}
+                className="w-full px-4 py-3 rounded-xl text-sm"
+                style={inputStyle}
+              />
+            </div>
+          )}
+          {settings.triggerType === 'interval' && (
+            <div>
+              <label className="block text-xs mb-2" style={{ color: '#8aa3b5' }}>间隔分钟数</label>
+              <input
+                type="number"
+                min={30}
+                value={settings.intervalMinutes || 30}
+                onChange={event => patchSettings({ intervalMinutes: Math.max(30, Number(event.target.value) || 30), nextRunAt: undefined })}
+                className="w-full px-4 py-3 rounded-xl text-sm"
+                style={inputStyle}
+              />
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="p-6 rounded-2xl space-y-5" style={cardStyle}>
+        <h3 className="text-base font-semibold" style={{ color }}>联网搜索设置、免打扰和频率限制</h3>
+        <div className="grid grid-cols-2 gap-4">
+          <div className="flex items-center justify-between p-4 rounded-xl" style={{ background: 'rgba(255,255,255,0.05)' }}>
+            <div>
+              <div className="text-sm font-medium" style={{ color: '#fff' }}>允许主动联网搜索资讯</div>
+              <div className="text-xs mt-1" style={{ color: '#6b8292' }}>兴趣资讯使用 MiniMax Web Search</div>
+            </div>
+            <ToggleSwitch checked={settings.allowWebSearch} onClick={() => patchSettings({ allowWebSearch: !settings.allowWebSearch })} color={color} />
+          </div>
+          <div className="flex items-center justify-between p-4 rounded-xl" style={{ background: 'rgba(255,255,255,0.05)' }}>
+            <div>
+              <div className="text-sm font-medium" style={{ color: '#fff' }}>启用免打扰</div>
+              <div className="text-xs mt-1" style={{ color: '#6b8292' }}>{settings.quietStart} - {settings.quietEnd}</div>
+            </div>
+            <ToggleSwitch checked={settings.quietHoursEnabled} onClick={() => patchSettings({ quietHoursEnabled: !settings.quietHoursEnabled })} color={color} />
+          </div>
+        </div>
+        <div className="grid grid-cols-4 gap-4">
+          <div>
+            <label className="block text-xs mb-2" style={{ color: '#8aa3b5' }}>最短间隔</label>
+            <input
+              type="number"
+              min={30}
+              value={settings.minIntervalMinutes}
+              onChange={event => patchSettings({ minIntervalMinutes: Math.max(30, Number(event.target.value) || 30), nextRunAt: undefined })}
+              className="w-full px-4 py-3 rounded-xl text-sm"
+              style={inputStyle}
+            />
+          </div>
+          <div>
+            <label className="block text-xs mb-2" style={{ color: '#8aa3b5' }}>每日最多</label>
+            <input
+              type="number"
+              min={1}
+              value={settings.maxDailyMessages}
+              onChange={event => patchSettings({ maxDailyMessages: Math.max(1, Number(event.target.value) || 5) })}
+              className="w-full px-4 py-3 rounded-xl text-sm"
+              style={inputStyle}
+            />
+          </div>
+          <div>
+            <label className="block text-xs mb-2" style={{ color: '#8aa3b5' }}>免打扰开始</label>
+            <input
+              type="time"
+              value={settings.quietStart}
+              onChange={event => patchSettings({ quietStart: event.target.value })}
+              className="w-full px-4 py-3 rounded-xl text-sm"
+              style={inputStyle}
+            />
+          </div>
+          <div>
+            <label className="block text-xs mb-2" style={{ color: '#8aa3b5' }}>免打扰结束</label>
+            <input
+              type="time"
+              value={settings.quietEnd}
+              onChange={event => patchSettings({ quietEnd: event.target.value })}
+              className="w-full px-4 py-3 rounded-xl text-sm"
+              style={inputStyle}
+            />
+          </div>
+        </div>
+      </div>
+
+      <div className="p-6 rounded-2xl space-y-4" style={cardStyle}>
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <h3 className="text-base font-semibold" style={{ color }}>立即测试主动聊天</h3>
+            <p className="text-xs mt-1" style={{ color: '#8aa3b5' }}>使用当前设置生成一条主动消息并发到聊天框。</p>
+          </div>
+          <button
+            onClick={runImmediateTest}
+            disabled={testState === 'testing'}
+            className="px-5 py-3 rounded-xl text-sm font-semibold"
+            style={{
+              background: testState === 'testing' ? 'rgba(56,189,248,0.28)' : 'linear-gradient(135deg, #38bdf8, #0891b2)',
+              color: '#fff',
+            }}
+          >
+            {testState === 'testing' ? '生成中...' : '立即测试主动聊天'}
+          </button>
+        </div>
+        {testMessage && (
+          <div className="p-4 rounded-xl text-sm whitespace-pre-wrap" style={{ background: 'rgba(0,0,0,0.26)', color: testState === 'error' ? '#fca5a5' : '#dff6ff' }}>
+            {testMessage}
+          </div>
+        )}
+      </div>
+
+      <div className="p-6 rounded-2xl space-y-4" style={cardStyle}>
+        <div className="flex items-center justify-between">
+          <h3 className="text-base font-semibold" style={{ color }}>最近触发记录</h3>
+          <span className="text-xs" style={{ color: '#8aa3b5' }}>最近 {records.length} 条</span>
+        </div>
+        {records.length === 0 ? (
+          <div className="p-5 rounded-xl text-sm text-center" style={{ background: 'rgba(0,0,0,0.2)', color: '#8aa3b5' }}>
+            暂无主动聊天触发记录
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {records.slice(0, 20).map(record => (
+              <div key={record.id} className="p-4 rounded-xl" style={{ background: 'rgba(0,0,0,0.22)', border: '1px solid rgba(255,255,255,0.08)' }}>
+                <div className="flex items-center justify-between gap-3 mb-2">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-xs px-2 py-1 rounded-lg" style={{ background: record.success ? 'rgba(34,197,94,0.16)' : 'rgba(239,68,68,0.16)', color: record.success ? '#22c55e' : '#ef4444' }}>
+                      {record.success ? '成功' : '失败'}
+                    </span>
+                    <span className="text-xs px-2 py-1 rounded-lg" style={{ background: 'rgba(56,189,248,0.14)', color }}>
+                      {record.type}
+                    </span>
+                    {record.usedWebSearch && (
+                      <span className="text-xs px-2 py-1 rounded-lg" style={{ background: 'rgba(6,182,212,0.14)', color: '#06b6d4' }}>
+                        联网 · {record.provider || 'minimax_web_search'} · {record.resultCount || 0} 条
+                      </span>
+                    )}
+                  </div>
+                  <span className="text-xs" style={{ color: '#6b8292' }}>{formatRecordTime(record.time)}</span>
+                </div>
+                <div className="text-sm" style={{ color: '#fff' }}>{record.topic}</div>
+                <div className="text-xs mt-1" style={{ color: '#8aa3b5' }}>{record.resultSummary}</div>
+                {record.error && <div className="text-xs mt-1" style={{ color: '#f87171' }}>{record.error}</div>}
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -1514,6 +2388,9 @@ function SchedulerTaskManager() {
     }
   };
 
+  const currentFormAction = classifyScheduledTaskAction(formContent, formWebSearch);
+  const currentFormMaySearch = mayTriggerScheduledWebSearch(formContent, formWebSearch);
+
   return (
     <div className="space-y-4">
       {/* 头部：新建按钮 */}
@@ -1569,6 +2446,18 @@ function SchedulerTaskManager() {
                 className="w-full px-4 py-3 rounded-xl text-sm resize-none"
                 style={{ background: 'rgba(255,255,255,0.08)', color: '#fff', border: '1px solid rgba(255,255,255,0.12)' }}
               />
+              {formContent.trim() && (
+                <div className="mt-2 flex items-center gap-2 flex-wrap">
+                  <span className="px-2 py-1 rounded-lg text-xs" style={{ background: 'rgba(249,115,22,0.16)', color: '#f97316' }}>
+                    动作类型：{getScheduledTaskActionLabel(currentFormAction)}
+                  </span>
+                  {currentFormMaySearch && (
+                    <span className="px-2 py-1 rounded-lg text-xs" style={{ background: 'rgba(6,182,212,0.14)', color: '#06b6d4' }}>
+                      该任务内容可能会触发联网搜索
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* 执行方式 */}
@@ -1715,6 +2604,27 @@ function SchedulerTaskManager() {
                       {task.type === 'once' ? '一次性' : task.type === 'daily' ? '每天' : '间隔'}
                     </span>
                     <span
+                      className="px-2 py-0.5 rounded text-xs font-medium"
+                      style={{
+                        background: classifyScheduledTaskAction(task.content, task.enableWebSearch) === 'web_search'
+                          ? 'rgba(6,182,212,0.18)'
+                          : classifyScheduledTaskAction(task.content, task.enableWebSearch) === 'ai_summary'
+                          ? 'rgba(168,85,247,0.18)'
+                          : classifyScheduledTaskAction(task.content, task.enableWebSearch) === 'need_clarification'
+                          ? 'rgba(239,68,68,0.18)'
+                          : 'rgba(34,197,94,0.16)',
+                        color: classifyScheduledTaskAction(task.content, task.enableWebSearch) === 'web_search'
+                          ? '#06b6d4'
+                          : classifyScheduledTaskAction(task.content, task.enableWebSearch) === 'ai_summary'
+                          ? '#c084fc'
+                          : classifyScheduledTaskAction(task.content, task.enableWebSearch) === 'need_clarification'
+                          ? '#f87171'
+                          : '#22c55e',
+                      }}
+                    >
+                      {getScheduledTaskActionLabel(classifyScheduledTaskAction(task.content, task.enableWebSearch))}
+                    </span>
+                    <span
                       className={`px-2 py-0.5 rounded text-xs font-medium ${task.enabled ? '' : 'line-through'}`}
                       style={{ color: task.enabled ? '#fff' : '#666' }}
                     >
@@ -1750,6 +2660,9 @@ function SchedulerTaskManager() {
                     <span>🔄 共执行 {task.runCount} 次</span>
                     {task.enableWebSearch && (
                       <span style={{ color: '#06b6d4' }}>🌐 联网</span>
+                    )}
+                    {mayTriggerScheduledWebSearch(task.content, task.enableWebSearch) && !task.enableWebSearch && (
+                      <span style={{ color: '#06b6d4' }}>可能联网搜索</span>
                     )}
                   </div>
                 </div>
@@ -1792,4 +2705,3 @@ function SchedulerTaskManager() {
     </div>
   );
 }
-
